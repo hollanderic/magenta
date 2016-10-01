@@ -209,17 +209,33 @@ mx_status_t usb_device_add(mx_device_t* hci_device, usb_hci_protocol_t* hci_prot
                                                 device_desc,
                                                 sizeof(*device_desc));
     if (status != sizeof(*device_desc)) {
-        printf("usb_device_get_descriptor failed\n");
+        printf("usb_device_get_descriptor failed expected size = 0x%lx\n", sizeof(*device_desc));
         free(dev);
         return status;
     }
+
+    printf("Got device descriptor. Details = \n");
+    printf("  bLength = %u\n", device_desc->bLength);
+    printf("  bDescriptorType = %u\n", device_desc->bDescriptorType);
+    printf("  bcdUSB = %u\n", device_desc->bcdUSB);
+    printf("  bDeviceClass = %u\n", device_desc->bDeviceClass);
+    printf("  bDeviceSubClass = %u\n", device_desc->bDeviceSubClass);
+    printf("  bDeviceProtocol = %u\n", device_desc->bDeviceProtocol);
+    printf("  bMaxPacketSize0 = %u\n", device_desc->bMaxPacketSize0);
+    printf("  idVendor = %u\n", device_desc->idVendor);
+    printf("  idProduct = %u\n", device_desc->idProduct);
+    printf("  bcdDevice = %u\n", device_desc->bcdDevice);
+    printf("  iManufacturer = %u\n", device_desc->iManufacturer);
+    printf("  iProduct = %u\n", device_desc->iProduct);
+    printf("  iSerialNumber = %u\n", device_desc->iSerialNumber);
+    printf("  bNumConfigurations = %u\n", device_desc->bNumConfigurations);
 
     // read configuration descriptor header to determine size
     usb_configuration_descriptor_t config_desc_header;
     status = usb_device_get_descriptor(hci_device, device_id, USB_DT_CONFIG, 0,
                                     &config_desc_header, sizeof(config_desc_header));
     if (status != sizeof(config_desc_header)) {
-        printf("usb_device_get_descriptor failed\n");
+        printf("usb_device_get_descriptor failed 2\n");
         free(dev);
         return status;
     }
@@ -234,11 +250,21 @@ mx_status_t usb_device_add(mx_device_t* hci_device, usb_hci_protocol_t* hci_prot
     status = usb_device_get_descriptor(hci_device, device_id, USB_DT_CONFIG, 0,
                                     config_desc, config_desc_size);
      if (status != config_desc_size) {
-        printf("usb_device_get_descriptor failed\n");
+        printf("usb_device_get_descriptor failed 3\n");
         free(config_desc);
         free(dev);
         return status;
     }
+
+    printf("Got Config Descriptor. Details = \n");
+    printf("  bLength=%u\n", config_desc->bLength);
+    printf("  bDescriptorType=%u\n", config_desc->bDescriptorType);
+    printf("  wTotalLength=%u\n", config_desc->wTotalLength);
+    printf("  bNumInterfaces=%u\n", config_desc->bNumInterfaces);
+    printf("  bConfigurationValue=%u\n", config_desc->bConfigurationValue);
+    printf("  iConfiguration=%u\n", config_desc->iConfiguration);
+    printf("  bmAttributes=%u\n", config_desc->bmAttributes);
+    printf("  bMaxPower=%u\n", config_desc->bMaxPower);
 
     // set configuration
     status = usb_device_control(hci_device, device_id,

@@ -410,6 +410,7 @@ static int xhci_device_thread(void* arg) {
         if (list_is_empty(&xhci->command_queue)) {
             completion_reset(&xhci->command_queue_completion);
         }
+
         mtx_unlock(&xhci->command_queue_mutex);
 
         if (!command) {

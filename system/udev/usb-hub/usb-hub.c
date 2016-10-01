@@ -15,7 +15,7 @@
 #include <magenta/listnode.h>
 #include <threads.h>
 
-//#define TRACE 1
+#define TRACE 1
 #if TRACE
 #define xprintf(fmt...) printf(fmt)
 #else
@@ -85,6 +85,7 @@ static mx_status_t usb_hub_get_port_status(usb_hub_t* hub, int port, usb_port_st
 
         return NO_ERROR;
     } else {
+        printf("usb_hub_get_port_status error!\n");
         return -1;
     }
 }
@@ -273,9 +274,11 @@ static int usb_hub_thread(void* arg) {
         int port = 1;
         int bit = 1;
         while (bitmap < bitmap_end && port <= num_ports) {
+            printf("Bitmap = 0x%x\n", *bitmap);
             if (*bitmap & (1 << bit)) {
                 usb_port_status_t status;
                 mx_status_t result = usb_hub_get_port_status(hub, port, &status);
+                printf("usb_hub_get_port_status return = %d\n", result);
                 if (result == NO_ERROR) {
                     usb_hub_handle_port_status(hub, port, &status);
                 }

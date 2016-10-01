@@ -28,16 +28,24 @@ typedef struct usb_bus {
 
 static mx_status_t usb_bus_add_device(mx_device_t* device, uint32_t device_id, uint32_t hub_id,
                                       usb_speed_t speed) {
+    printf("usb_bus_add_device\n");
     usb_bus_t* bus = get_usb_bus(device);
 
-    if (device_id >= bus->max_device_count) return ERR_INVALID_ARGS;
-
+    if (device_id >= bus->max_device_count) {
+        printf("usb_bus_add_device invalid args: device_id = %u, max_device_count = %lu\n",
+               device_id, bus->max_device_count);
+        return ERR_INVALID_ARGS;
+    }
+    
     usb_device_t* usb_device;
     mx_status_t result = usb_device_add(bus->hci_device, bus->hci_protocol, &bus->device, device_id,
                                         hub_id, speed, &usb_device);
     if (result == NO_ERROR) {
         bus->devices[device_id] = usb_device;
     }
+
+    printf("usb_device_add returned %d\n", result);
+
     return result;
 }
 
@@ -107,6 +115,8 @@ static mx_protocol_device_t usb_bus_device_proto = {
 };
 
 static mx_status_t usb_bus_bind(mx_driver_t* driver, mx_device_t* device) {
+    printf("usb_bus_bind\n");
+
     usb_hci_protocol_t* hci_protocol;
     if (device_get_protocol(device, MX_PROTOCOL_USB_HCI, (void**)&hci_protocol)) {
         return ERR_NOT_SUPPORTED;

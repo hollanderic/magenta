@@ -274,6 +274,7 @@ mx_status_t mailbox_bind(mx_driver_t* driver, mx_device_t* parent) {
     dev->prop_count = 2;
 
     status = device_add(dev, parent);
+
     if (status != NO_ERROR) {
         free(dev);
         return status;
@@ -315,6 +316,8 @@ mx_status_t mailbox_bind(mx_driver_t* driver, mx_device_t* parent) {
     if (status != NO_ERROR) {
         return status;
     }
+
+    bcm_vc_poweron(bcm_dev_usb);
 
     return NO_ERROR;
 }
