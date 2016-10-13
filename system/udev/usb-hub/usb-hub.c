@@ -121,7 +121,7 @@ static mx_status_t usb_hub_wait_for_port(usb_hub_t* hub, int port, usb_port_stat
 }
 
 static void usb_hub_interrupt_complete(iotxn_t* txn, void* cookie) {
-    xprintf("usb_hub_interrupt_complete got %d %lld\n", txn->status, txn->actual);
+    xprintf("usb_hub_interrupt_complete got %d %ld\n", txn->status, txn->actual);
     usb_hub_t* hub = (usb_hub_t*)cookie;
     completion_signal(&hub->completion);
 }

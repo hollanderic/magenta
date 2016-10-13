@@ -2,16 +2,18 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-# TODO(gkalsi, MG-295): Remove this compile time flag.
-# ifeq ($(PLATFORM),bcm28xx)
-
 LOCAL_DIR := $(GET_LOCAL_DIR)
 
-MODULE_STATIC_LIBS += \
-	udev/usb-dwc-xinu
+MODULE := $(LOCAL_DIR)
 
-DRIVER_SRCS += \
+MODULE_TYPE := driver
+
+MODULE_SRCS += \
     $(LOCAL_DIR)/usb-dwc.c \
     $(LOCAL_DIR)/dwc-request-scheduler.c
 
-# endif
+MODULE_STATIC_LIBS := ulib/ddk ulib/hexdump
+
+MODULE_LIBS := ulib/driver ulib/musl ulib/magenta ulib/mxio
+
+include make/module.mk

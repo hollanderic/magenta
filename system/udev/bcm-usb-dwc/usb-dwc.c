@@ -1067,7 +1067,7 @@ static mx_status_t usb_dwc_bind(mx_driver_t* drv, mx_device_t* dev) {
     dwc->irq_handle = irq_handle;
     dwc->parent = dev;
 
-    device_init(&dwc->device, drv, "usb-dwc", &dwc_device_proto);
+    device_init(&dwc->device, drv, "bcm-usb-dwc", &dwc_device_proto);
 
     dwc->device.protocol_id = MX_PROTOCOL_USB_HCI;
     dwc->device.protocol_ops = &dwc_hci_protocol;
@@ -1090,15 +1090,14 @@ error_return:
     return st;
 }
 
-static mx_bind_inst_t binding[] = {
-    BI_MATCH_IF(EQ, BIND_PROTOCOL, MX_PROTOCOL_BCM_VC_RPC),
-};
 
-mx_driver_t _driver_usb_dwc BUILTIN_DRIVER = {
-    .name = "usb-dwc",
+mx_driver_t _driver_usb_dwc = {
     .ops = {
         .bind = usb_dwc_bind,
     },
-    .binding = binding,
-    .binding_size = sizeof(binding),
 };
+
+MAGENTA_DRIVER_BEGIN(_driver_usb_dwc, "bcm-usb-dwc", "magenta", "0.1", 3)
+    BI_ABORT_IF(NE, BIND_SOC_VID, SOC_VID_BROADCOMM),
+    BI_MATCH_IF(EQ, BIND_SOC_DID, SOC_DID_BROADCOMM_MAILBOX),
+MAGENTA_DRIVER_END(_driver_usb_dwc)
