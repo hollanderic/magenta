@@ -42,6 +42,8 @@
 #define ROOT_HUB_DEVICE_ID MAX_DEVICE_COUNT + 1
 
 static volatile struct dwc_regs* regs;
+
+static mtx_t root_port_status_mtx;
 static volatile usb_port_status_t root_port_status;
 static volatile bool root_port_status_changed = false;
 static struct dwc_transfer_request* stashed_requests[NUM_HOST_CHANNELS];
@@ -197,19 +199,23 @@ static mx_status_t usb_dwc_setupcontroller(void) {
     return NO_ERROR;
 }
 
-static void dwc_start_root_hub(void) {
+static union dwc_host_port_ctrlstatus dwc_get_host_port_ctrlstatus(void) {
     union dwc_host_port_ctrlstatus hw_status = regs->host_port_ctrlstatus;
 
     hw_status.enabled = 0;
     hw_status.connected_changed = 0;
     hw_status.enabled_changed = 0;
     hw_status.overcurrent_changed = 0;
+    return hw_status;
+}
+
+static void
+dwc_power_on_host_port(void) {
+    union dwc_host_port_ctrlstatus hw_status;
+
+    hw_status = dwc_get_host_port_ctrlstatus();
     hw_status.powered = 1;
-
     regs->host_port_ctrlstatus = hw_status;
-
-    // Let the host port power up.
-    usleep(25000);
 }
 
 static void dwc_reset_host_port(void) {
@@ -239,8 +245,8 @@ static mx_status_t dwc_complete_root_port_status_txn(void) {
 
     // txn->ops->copyto(txn, (void*)&root_port_status, sizeof(root_port_status), 0);
     uint16_t val = 0x2;
-    txn->ops->copyto(txn, (void*)&val, sizeof(root_port_status), 0);
-    txn->ops->complete(txn, NO_ERROR, sizeof(root_port_status));
+    txn->ops->copyto(txn, (void*)&val, sizeof(val), 0);
+    txn->ops->complete(txn, NO_ERROR, sizeof(val));
     return NO_ERROR;
 }
 
@@ -470,6 +476,8 @@ uint32_t dwc_handle_interrupt(void) {
         // Clear the interrupt.
         union dwc_host_port_ctrlstatus hw_status = regs->host_port_ctrlstatus;
 
+        mtx_lock(&root_port_status_mtx);
+
         root_port_status.wPortChange = 0;
         root_port_status.wPortStatus = 0;
 
@@ -495,6 +503,8 @@ uint32_t dwc_handle_interrupt(void) {
             root_port_status.wPortChange |= USB_PORT_ENABLE;
         if (hw_status.overcurrent_changed)
             root_port_status.wPortChange |= USB_PORT_OVER_CURRENT;
+
+        mtx_unlock(&root_port_status_mtx);
 
         // Clear the interrupt.
         hw_status.enabled = 0;
@@ -566,7 +576,6 @@ static void dwc_set_bus_device(mx_device_t* device, mx_device_t* busdev) {
     dwc->bus_device = busdev;
     if (busdev) {
         device_get_protocol(busdev, MX_PROTOCOL_USB_BUS, (void**)&dwc->bus_protocol);
-        dwc_start_root_hub();
         dwc_reset_host_port();
         dwc_add_root_hub(dwc);
     } else {
@@ -831,14 +840,16 @@ static mx_status_t dwc_usb_rh_control(usb_protocol_data_t* data, iotxn_t* txn) {
         // index is 1-based port number
         if (request == USB_REQ_SET_FEATURE) {
             if (value == USB_FEATURE_PORT_POWER) {
+                dwc_power_on_host_port();
                 txn->ops->complete(txn, NO_ERROR, 0);
                 return NO_ERROR;
             } else if (value == USB_FEATURE_PORT_RESET) {
+                dwc_reset_host_port();
                 txn->ops->complete(txn, NO_ERROR, 0);
                 return NO_ERROR;
             }
         } else if (request == USB_REQ_CLEAR_FEATURE) {
-            // TODO(gkalsi): This clears all the features.
+            mtx_lock(&root_port_status_mtx);
             switch (value) {
                 case USB_FEATURE_C_PORT_CONNECTION:
                     root_port_status.wPortChange &= ~USB_PORT_CONNECTION;
@@ -856,13 +867,16 @@ static mx_status_t dwc_usb_rh_control(usb_protocol_data_t* data, iotxn_t* txn) {
                     root_port_status.wPortChange &= ~USB_PORT_RESET;
                     break;
             }
+            mtx_unlock(&root_port_status_mtx);
 
             txn->ops->complete(txn, NO_ERROR, 0);
             return NO_ERROR;
         } else if ((request_type & USB_DIR_MASK) == USB_DIR_IN &&
                    request == USB_REQ_GET_STATUS && value == 0) {
+            mtx_lock(&root_port_status_mtx);
             txn->ops->copyto(txn, (void*)&root_port_status, sizeof(root_port_status), 0);
             txn->ops->complete(txn, NO_ERROR, sizeof(root_port_status));
+            mtx_unlock(&root_port_status_mtx);
             return NO_ERROR;
         } else {
             printf("UNKNOWN USB PORT REQUEST");
