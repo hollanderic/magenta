@@ -28,8 +28,8 @@ typedef struct usb_bus {
 
 static mx_status_t usb_bus_add_device(mx_device_t* device, uint32_t device_id, uint32_t hub_id,
                                       usb_speed_t speed) {
-    printf("usb_bus_add_device\n");
     usb_bus_t* bus = get_usb_bus(device);
+    printf("usb_bus_add_device, bus = %p\n", bus);
 
     if (device_id >= bus->max_device_count) {
         printf("usb_bus_add_device invalid args: device_id = %u, max_device_count = %lu\n",

@@ -38,6 +38,7 @@ mtx_t pending_transfer_mtx;
 list_node_t pending_transfer_list;
 completion_t pending_transfer_completion;
 
+static mtx_t pending_req_mtx;
 static struct dwc_transfer_request* channel_pending_xfers[DWC_NUM_CHANNELS];
 
 static bool is_control_transfer(struct dwc_transfer_request* req);
@@ -98,7 +99,7 @@ void dwc_channel_start_transaction(struct dwc_transfer_request* req, uint32_t ch
 
 // Start a USB transfer on the specified USB channel.
 static void dwc_start_transfer(struct dwc_transfer_request* req, uint32_t channel) {
-    printf("dwc_start_transfer req = %p, channel = %u\n", req, channel);
+    // printf("dwc_start_transfer req = %p, channel = %u\n", req, channel);
 
     iotxn_t* txn = req->txn;
     device_context_t* dev = req->dev_ctx;
@@ -117,6 +118,8 @@ static void dwc_start_transfer(struct dwc_transfer_request* req, uint32_t channe
 
     union dwc_host_channel_transfer transfer;
     transfer.val = 0;
+
+    req->more_data = false;
 
     void *dataptr;
 
@@ -153,7 +156,7 @@ static void dwc_start_transfer(struct dwc_transfer_request* req, uint32_t channe
             // TODO(gkalsi): What if the transaction is longer than 1 packet?
             // We need to send multiple data packets here.
             if (req->actual_size) {
-                printf("Actual size = %lu\n", req->actual_size);
+                // printf("Actual size = %lu\n", req->actual_size);
                 // size_t data_left = txn->length - req->actual_size;
                 // uint8_t* temp = malloc(data_left);
                 // txn->ops->copyfrom(txn, temp, data_left, req->actual_size);
@@ -164,7 +167,7 @@ static void dwc_start_transfer(struct dwc_transfer_request* req, uint32_t channe
                 transfer.packet_id = DWC_USB_PID_DATA1;
             }
 
-            printf("Data Txn pid = %u\n", transfer.packet_id);
+            // printf("Data Txn pid = %u\n", transfer.packet_id);
 
             mx_paddr_t phys_addr;
             txn->ops->physmap(txn, &phys_addr);
@@ -199,7 +202,6 @@ static void dwc_start_transfer(struct dwc_transfer_request* req, uint32_t channe
         dataptr = (void*)phys_addr;
         transfer.size = txn->length;
         transfer.packet_id = 0;
-
         
         characteristics.endpoint_type =
             req->ep_ctx->descriptor.bmAttributes & 0x3;
@@ -208,10 +210,10 @@ static void dwc_start_transfer(struct dwc_transfer_request* req, uint32_t channe
             req->ep_ctx->descriptor.wMaxPacketSize & 0x7ff;
         characteristics.packets_per_frame = 1;
 
-        printf("Non Control Transfer:\n");
-        printf("  characteristics.endpoint_type:%d\n", characteristics.endpoint_type);
-        printf("  characteristics.endpoint_number:%d\n", characteristics.endpoint_number);
-        printf("  characteristics.max_packet_size:%d\n", characteristics.max_packet_size);
+        // printf("Non Control Transfer:\n");
+        // printf("  characteristics.endpoint_type:%d\n", characteristics.endpoint_type);
+        // printf("  characteristics.endpoint_number:%d\n", characteristics.endpoint_number);
+        // printf("  characteristics.max_packet_size:%d\n", characteristics.max_packet_size);
     }
 
     characteristics.device_address = pdata->device_id;
@@ -227,9 +229,7 @@ static void dwc_start_transfer(struct dwc_transfer_request* req, uint32_t channe
             req->more_data = true;
         }
 
-        // if (dev->speed == USB_SPEED_LOW) {
-            characteristics.low_speed = 1;
-        // }
+        characteristics.low_speed = 1;
     }
 
     if (!IS_WORD_ALIGNED(dataptr)) {
@@ -259,11 +259,17 @@ static void dwc_start_transfer(struct dwc_transfer_request* req, uint32_t channe
     chanptr->dma_address = (uint32_t)(dma_ptr);
 
     // Stash this request for later.
+    mtx_lock(&pending_req_mtx);
     channel_pending_xfers[channel] = (struct dwc_transfer_request*)req;
+    mtx_unlock(&pending_req_mtx);
 
     chanptr->characteristics = characteristics;
     chanptr->split_control   = split_control;
     chanptr->transfer        = transfer;
+
+    if (pdata->device_id == 4 && pdata->ep_address != 0) {
+        printf("txn devid = %d, ep = %d\n", pdata->device_id, pdata->ep_address);
+    }
 
     dwc_channel_start_transaction(req, channel);
 
@@ -344,7 +350,9 @@ mx_status_t dwc_start_scheduler_thread(struct dwc_regs* regs) {
 }
 
 void do_channel_callback(uint channel) {
+    mtx_lock(&pending_req_mtx);
     struct dwc_transfer_request* req = channel_pending_xfers[channel];
+    mtx_unlock(&pending_req_mtx);
 
     if (!req || !req->cb)
         return;
@@ -412,6 +420,7 @@ void release_channel(uint ch) {
     mtx_lock(&free_channel_mtx);
 
     free_channels |= (1 << ch);
+    channel_pending_xfers[ch] = NULL;
 
     mtx_unlock(&free_channel_mtx);
 

@@ -12,7 +12,6 @@
 #include <string.h>
 
 static void usb_control_complete(iotxn_t* txn, void* cookie) {
-    printf("signal usb_control_complete = %p\n", txn);
     completion_signal((completion_t*)cookie);
 }
 
@@ -48,7 +47,6 @@ mx_status_t usb_control(mx_device_t* device, uint8_t request_type, uint8_t reque
     txn->length = length;
     txn->complete_cb = usb_control_complete;
     txn->cookie = &completion;
-    printf("usb_control::iotxn_queue = %p\n", txn);
     iotxn_queue(device, txn);
     completion_wait(&completion, MX_TIME_INFINITE);
 
@@ -60,7 +58,6 @@ mx_status_t usb_control(mx_device_t* device, uint8_t request_type, uint8_t reque
             txn->ops->copyfrom(txn, data, txn->actual, 0);
         }
     }
-    printf("txn status = %d\n", status);
     txn->ops->release(txn);
     return status;
 }

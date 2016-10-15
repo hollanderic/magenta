@@ -6,8 +6,11 @@
 #include <magenta/types.h>
 #include <ddk/iotxn.h>
 #include <magenta/hw/usb.h>
+#include <threads.h>
+#include <ddk/completion.h>
 
 struct dwc_regs;
+struct dwc_transfer_request;
 
 typedef void (*dwc_transfer_complete_cb)(mx_status_t result, void* data);
 
@@ -23,6 +26,12 @@ typedef enum {
 typedef struct endpoint_context {
     list_node_t node;
     usb_endpoint_descriptor_t descriptor;
+
+    // The following fields pertain to handling deferred transactions on 
+    // interrupt endpoints.
+    thrd_t intr_ep_worker;
+    completion_t intr_ep_completion;
+    struct dwc_transfer_request* pending_request;
 } endpoint_context_t;
 
 typedef struct device_context {

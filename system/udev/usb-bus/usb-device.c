@@ -250,7 +250,7 @@ mx_status_t usb_device_add(mx_device_t* hci_device, usb_hci_protocol_t* hci_prot
     status = usb_device_get_descriptor(hci_device, device_id, USB_DT_CONFIG, 0,
                                     config_desc, config_desc_size);
      if (status != config_desc_size) {
-        printf("usb_device_get_descriptor failed 3\n");
+        printf("Expected config descriptor size = %u, got %u\n", config_desc_size, status);
         free(config_desc);
         free(dev);
         return status;
