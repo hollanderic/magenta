@@ -45,6 +45,8 @@ static mtx_t root_port_status_mtx;
 static volatile struct dwc_regs* regs;
 static volatile usb_port_status_t root_port_status;
 static volatile bool root_port_status_changed = false;
+
+static mtx_t stashed_request_mtx;
 static struct dwc_transfer_request* stashed_requests[NUM_HOST_CHANNELS];
 
 // TODO(gkalsi): Hand these out and reclaim them dynamically.
@@ -171,7 +173,20 @@ static bool usb_is_control_request(struct dwc_transfer_request* req) {
 }
 
 void dwc_save_request(struct dwc_transfer_request* req, unsigned int chan) {
+    mtx_lock(&stashed_request_mtx);
     stashed_requests[chan] = req;
+    mtx_unlock(&stashed_request_mtx);
+}
+
+struct dwc_transfer_request* dwc_get_request(unsigned int chan) {
+    assert(chan < NUM_HOST_CHANNELS);
+    struct dwc_transfer_request* result = NULL;
+
+    mtx_lock(&stashed_request_mtx);
+    result = stashed_requests[chan];
+    mtx_unlock(&stashed_request_mtx);
+
+    return result;
 }
 
 static mx_status_t usb_dwc_setupcontroller(void) {
@@ -370,7 +385,22 @@ bool dwc_handle_host_channel_interrupt(unsigned int channel) {
     // printf("Channel interrupt = 0x%x\n", chanptr->interrupts.val);
     enum dwc_intr_status intr_status;
 
-    struct dwc_transfer_request* req = stashed_requests[channel];
+    struct dwc_transfer_request* req = dwc_get_request(channel);
+
+    if (req == NULL ) {
+        printf("Request is Null!\n");
+    }
+
+    if (req->txn == NULL) {
+        printf("Request Transaction is Null! Channel = %u\n", channel);
+    }
+
+    // iotxn_t* txn = req->txn;
+    // usb_protocol_data_t* pdata = iotxn_pdata(txn, usb_protocol_data_t);
+    // if (pdata->device_id == 4 && pdata->ep_address == 0) {
+    //     printf("txn devid = %d, ep = %d\n", pdata->device_id, pdata->ep_address);
+    // }
+
     // iotxn_t* txn = request->txn;
     // usb_protocol_data_t* data = iotxn_pdata(txn, usb_protocol_data_t);
     // usb_setup_t* setup = (data->ep_address == 0 ? &data->setup : NULL);
@@ -387,6 +417,9 @@ bool dwc_handle_host_channel_interrupt(unsigned int channel) {
          chanptr->characteristics.endpoint_direction == USB_DIRECTION_OUT))
     {
         printf("Transfer failed with status = 0x%x\n", interrupts.val);
+        printf("  characteristics = 0x%x\n", chanptr->characteristics.val);
+        printf("    split_control = 0x%x\n", chanptr->split_control.val);
+        printf("         transfer = 0x%x\n", chanptr->transfer.val);
         return true;   
     } else if (interrupts.frame_overrun)
     {
@@ -404,6 +437,26 @@ bool dwc_handle_host_channel_interrupt(unsigned int channel) {
     else {
         intr_status = dwc_handle_channel_halted(req, channel);
     }
+
+
+    // usb_setup_t* setup = (pdata->ep_address == 0 ? &pdata->setup : NULL);
+    // if (setup) {
+    //     if (
+    //         setup->bmRequestType == 128 &&
+    //         setup->bRequest == 6 &&
+    //         // setup->wValue == 256 &&
+    //         // setup->wLength == 18 &&
+    //         setup->wIndex == 0
+    //     ) {
+    //         printf("X\n");
+    //     }
+    // }
+
+    // printf("Handle Channel Halted Complete\n");
+
+    // if (pdata->device_id == 4 && pdata->ep_address == 0) {
+    //     printf("txn devid = %d, ep = %d\n", pdata->device_id, pdata->ep_address);
+    // }
 
     if (intr_status == XFER_COMPLETE) {
         union dwc_host_channel_characteristics characteristics;
@@ -620,15 +673,22 @@ static size_t dwc_get_max_device_count(mx_device_t* device) {
 
 static int dwc_intr_retry_thread(void* arg) {
     endpoint_context_t* ep_ctx = (endpoint_context_t*)arg;
+    uint32_t txns_queued = 0;
     printf("Top of dwc_intr_retry_thread.\n");
     while (true) {
         completion_wait(&ep_ctx->intr_ep_completion, MX_TIME_INFINITE);
         completion_reset(&ep_ctx->intr_ep_completion);
 
+        txns_queued++;
+
         struct dwc_transfer_request* req = ep_ctx->pending_request;
         if (!req) {
             printf("intr compleition signalled but no request pending?\n");
             continue;
+        }
+
+        if (txns_queued % 1000 == 0) {
+            printf("%u transactions queued\n", txns_queued);
         }
 
         uint32_t timeout_ms = 0;
@@ -723,6 +783,7 @@ mx_status_t dwc_hub_device_added(mx_device_t* hci_device, uint32_t hub_address, 
     getdesc_txn->protocol = MX_PROTOCOL_USB;
     usb_protocol_data_t* proto_data = iotxn_pdata(getdesc_txn, usb_protocol_data_t);
     completion_t completion = COMPLETION_INIT;
+    completion_t completion2 = COMPLETION_INIT;
     proto_data->ep_address = 0;
     proto_data->frame = 0;
     proto_data->device_id = 0;
@@ -765,6 +826,7 @@ mx_status_t dwc_hub_device_added(mx_device_t* hci_device, uint32_t hub_address, 
     dev_ctx->max_packet_size = short_descriptor.bMaxPacketSize0;
     printf("Got MPS = %d\n", dev_ctx->max_packet_size);
 
+    // getdesc_txn->ops->release(getdesc_txn);
     completion_reset(&completion);
     // Set the Device Address
     iotxn_t *setaddr_txn;
@@ -780,7 +842,7 @@ mx_status_t dwc_hub_device_added(mx_device_t* hci_device, uint32_t hub_address, 
     proto_data->frame = 0;
     proto_data->device_id = 0;
     setaddr_txn->complete_cb = usb_control_complete;
-    setaddr_txn->cookie = &completion;
+    setaddr_txn->cookie = &completion2;
 
     proto_data->setup.bmRequestType = 0x00;
     proto_data->setup.bRequest = 0x05;
@@ -789,9 +851,9 @@ mx_status_t dwc_hub_device_added(mx_device_t* hci_device, uint32_t hub_address, 
     proto_data->setup.wLength = 0;
     setaddr_txn->length = 0;
 
-    memset(req, 0, sizeof(*req));
-    struct dwc_transfer_request* req2 = req;
-    // dwc_alloc_request(&req2);
+    // memset(req, 0, sizeof(*req));
+    struct dwc_transfer_request* req2;
+    dwc_alloc_request(&req2);
 
     req2->txn = setaddr_txn;
     req2->txn_phase = PHASE_SETUP;
@@ -800,13 +862,15 @@ mx_status_t dwc_hub_device_added(mx_device_t* hci_device, uint32_t hub_address, 
     req2->dev_ctx = dev_ctx;
 
     dwc_queue_transfer(req2);
-    completion_wait(&completion, MX_TIME_INFINITE);
+    completion_wait(&completion2, MX_TIME_INFINITE);
+
+    // setaddr_txn->ops->release(setaddr_txn);
 
     // We need to wait 50ms for this address to be valid.
-    mx_nanosleep(MX_MSEC(50));
+    // mx_nanosleep(MX_MSEC(50));
 
     free(req);
-    // free(req2);
+    free(req2);
 
     // Set Address Completed. Store this device context.
     mtx_lock(&devctx_mtx);
@@ -1006,7 +1070,7 @@ mx_status_t dwc_rh_iotxn_queue(iotxn_t* txn) {
 
 static mx_status_t dwc_do_iotxn_queue(iotxn_t* txn) {
     usb_protocol_data_t* data = iotxn_pdata(txn, usb_protocol_data_t);
-    printf("dwc_do_iotxn_queue, txn = %p, pdata = %p\n", txn, data);
+    // printf("dwc_do_iotxn_queue, txn = %p, pdata = %p\n", txn, data);
 
     if (dwc_is_root_hub(data->device_id)) {
         return dwc_rh_iotxn_queue(txn);
@@ -1014,9 +1078,8 @@ static mx_status_t dwc_do_iotxn_queue(iotxn_t* txn) {
 
     struct dwc_transfer_request* req;
     dwc_alloc_request(&req);  // TODO(gkalsi): Check return value;
-
     if (!req) {
-        printf("REQ WAS NULL!!!!\n");
+        printf("Failed to allocate request!\n");
     }
 
     endpoint_context_t* ep_ctx = NULL;
@@ -1042,6 +1105,10 @@ static mx_status_t dwc_do_iotxn_queue(iotxn_t* txn) {
         req->txn_phase = PHASE_SETUP;
     }
 
+    if (txn == NULL) {
+        printf("Got a NULL iotxn in dwc_do_iotxn_queue\n");
+    }
+
     req->txn = txn;
     req->ep_ctx = target_ctx;
     mtx_lock(&devctx_mtx);
@@ -1056,6 +1123,11 @@ static mx_status_t dwc_do_iotxn_queue(iotxn_t* txn) {
 }
 
 static void dwc_iotxn_queue(mx_device_t* hci_device, iotxn_t* txn) {
+    if (!hci_device || !txn) {
+        printf("hci_device = %p, txn = %p. Aborting.\n", hci_device, txn);
+        return;
+    }
+
     mx_status_t status = dwc_do_iotxn_queue(txn);
     if (status != NO_ERROR && status != ERR_BUFFER_TOO_SMALL) {
         printf("Completing transaction with failure = %d\n", status);

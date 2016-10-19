@@ -66,3 +66,4 @@ mx_status_t dwc_start_scheduler_thread(struct dwc_regs* regs);
 void do_channel_callback(unsigned int channel);
 void release_channel(unsigned int ch);
 void dwc_save_request(struct dwc_transfer_request* req, unsigned int chan);
+struct dwc_transfer_request* dwc_get_request(unsigned int chan);

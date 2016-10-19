@@ -5,6 +5,7 @@
 #include <ddk/completion.h>
 #include <ddk/protocol/usb.h>
 #include <string.h>
+#include <stdio.h>
 
 #include "usb-device.h"
 #include "util.h"
@@ -46,6 +47,8 @@ mx_status_t usb_device_control(mx_device_t* hci_device, uint32_t device_id,
     txn->cookie = &completion;
     iotxn_queue(hci_device, txn);
     completion_wait(&completion, MX_TIME_INFINITE);
+
+    printf("usb_device_control returned\n");
 
     status = txn->status;
     if (status == NO_ERROR) {
