@@ -169,6 +169,8 @@ static bool dwc_is_root_hub(uint32_t device_id) {
 }
 
 static bool usb_is_control_request(struct dwc_transfer_request* req) {
+    // XXXXXXXXXXXXXXX
+    // TODO(gkalsi): THIS IS COMPLETELY BROKEN. 
     return req->ep_ctx == NULL;
 }
 
@@ -267,6 +269,8 @@ static mx_status_t dwc_complete_root_port_status_txn(void) {
 }
 
 static enum dwc_intr_status dwc_handle_channel_halted(struct dwc_transfer_request* req, unsigned int channel) {
+    assert(channel < NUM_HOST_CHANNELS);
+
     volatile struct dwc_host_channel* chanptr = &regs->host_channels[channel];
     union dwc_host_channel_interrupts interrupts = chanptr->interrupts;
 
@@ -387,11 +391,11 @@ bool dwc_handle_host_channel_interrupt(unsigned int channel) {
 
     struct dwc_transfer_request* req = dwc_get_request(channel);
 
-    if (req == NULL ) {
+    if ((uintptr_t)req < 0x30) {
         printf("Request is Null!\n");
     }
 
-    if (req->txn == NULL) {
+    if ((uintptr_t)req->txn < 0x30) {
         printf("Request Transaction is Null! Channel = %u\n", channel);
     }
 
@@ -427,6 +431,7 @@ bool dwc_handle_host_channel_interrupt(unsigned int channel) {
     }
     else if (interrupts.nyet_response_received)
     {
+        req->complete_split = false;
         intr_status = XFER_NEEDS_TRANS_RESTART;
     }
     else if (interrupts.nak_response_received)
@@ -438,6 +443,13 @@ bool dwc_handle_host_channel_interrupt(unsigned int channel) {
         intr_status = dwc_handle_channel_halted(req, channel);
     }
 
+
+    iotxn_t* txn = req->txn;
+    usb_protocol_data_t* pdata = iotxn_pdata(txn, usb_protocol_data_t);
+    if (pdata->device_id == 4 && chanptr->characteristics.endpoint_number != 0 &&
+        chanptr->characteristics.endpoint_type == USB_TRANSFER_TYPE_INTERRUPT) {
+        // printf("IRQ for devid = 4. Interrupts = %x\n", interrupts.val);
+    }
 
     // usb_setup_t* setup = (pdata->ep_address == 0 ? &pdata->setup : NULL);
     // if (setup) {
@@ -454,7 +466,7 @@ bool dwc_handle_host_channel_interrupt(unsigned int channel) {
 
     // printf("Handle Channel Halted Complete\n");
 
-    // if (pdata->device_id == 4 && pdata->ep_address == 0) {
+    // if (pdata->device_id == 4) {
     //     printf("txn devid = %d, ep = %d\n", pdata->device_id, pdata->ep_address);
     // }
 
@@ -465,7 +477,7 @@ bool dwc_handle_host_channel_interrupt(unsigned int channel) {
         chanptr->interrupt_mask.val = 0;
         chanptr->interrupts.val = 0xffffffff;
 
-        // printf("Complete txn req = %p with length = %lu\n", req, req->txn->length);
+        printf("Complete txn req = %p with length = %lu\n", req, req->txn->length);
 
         req->txn->ops->complete(req->txn, NO_ERROR, req->txn->length);
         return true;
@@ -488,10 +500,28 @@ bool dwc_handle_host_channel_interrupt(unsigned int channel) {
         chanptr->interrupt_mask.val = 0;
         chanptr->interrupts.val = 0xffffffff;
 
+        iotxn_t* txn = req->txn;
+        usb_protocol_data_t* pdata = iotxn_pdata(txn, usb_protocol_data_t);
+        if (pdata->device_id == 4 && chanptr->characteristics.endpoint_number != 0 &&
+            chanptr->characteristics.endpoint_type == USB_TRANSFER_TYPE_INTERRUPT) {
+            printf("Deferring Transfer for devid = 4, interrupts = %x\n", interrupts.val);
+        }
+
         release_channel(channel);
+        if (req == NULL) {
+            // dwc_queue_transfer(req);
+            printf("Can't defer xfer because request is null!\n");
+            return false;
+        }
 
         // Get the endpoint context.
         endpoint_context_t* ep_ctx = req->ep_ctx;
+
+        if (ep_ctx == NULL) {
+            dwc_queue_transfer(req);
+            // printf("Can't defer xfer because ep context is null!\n");
+            return false;
+        }
 
         // Set the pending request.
         ep_ctx->pending_request = req;
@@ -687,7 +717,10 @@ static int dwc_intr_retry_thread(void* arg) {
             continue;
         }
 
-        if (txns_queued % 1000 == 0) {
+
+        usb_protocol_data_t* proto_data = iotxn_pdata(req->txn, usb_protocol_data_t);
+
+        if (txns_queued % 250 == 0 && proto_data->device_id == 4) {
             printf("%u transactions queued\n", txns_queued);
         }
 
@@ -697,6 +730,7 @@ static int dwc_intr_retry_thread(void* arg) {
         } else {
             timeout_ms = ep_ctx->descriptor.bInterval;
         }
+        timeout_ms = timeout_ms / 2;
         timeout_ms = timeout_ms ? timeout_ms : 1;
 
         // printf("Retrying req = %p after %ums\n", req, timeout_ms);
@@ -1070,7 +1104,7 @@ mx_status_t dwc_rh_iotxn_queue(iotxn_t* txn) {
 
 static mx_status_t dwc_do_iotxn_queue(iotxn_t* txn) {
     usb_protocol_data_t* data = iotxn_pdata(txn, usb_protocol_data_t);
-    // printf("dwc_do_iotxn_queue, txn = %p, pdata = %p\n", txn, data);
+    printf("dwc_do_iotxn_queue, txn = %p, pdata = %p\n", txn, data);
 
     if (dwc_is_root_hub(data->device_id)) {
         return dwc_rh_iotxn_queue(txn);

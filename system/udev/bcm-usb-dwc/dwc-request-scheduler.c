@@ -102,6 +102,7 @@ void dwc_channel_start_transaction(struct dwc_transfer_request* req, uint32_t ch
 static void dwc_start_transfer(struct dwc_transfer_request* req, uint32_t channel) {
     // printf("dwc_start_transfer req = %p, channel = %u\n", req, channel);
     assert(channel < DWC_NUM_CHANNELS);
+    assert(req);
 
     iotxn_t* txn = req->txn;
     device_context_t* dev = req->dev_ctx;
@@ -244,6 +245,11 @@ static void dwc_start_transfer(struct dwc_transfer_request* req, uint32_t channe
     //     }
     // }
 
+    if (pdata->device_id == 4 && characteristics.endpoint_number != 0 &&
+        characteristics.endpoint_type == USB_TRANSFER_TYPE_INTERRUPT) {
+        printf("Scheduling interrupt transfer for devid = 4\n");
+    }
+
     characteristics.device_address = pdata->device_id;
 
     // if (dev->speed != USB_SPEED_HIGH) {
@@ -293,46 +299,8 @@ static void dwc_start_transfer(struct dwc_transfer_request* req, uint32_t channe
     chanptr->split_control   = split_control;
     chanptr->transfer        = transfer;
 
-    // if (pdata->device_id == 4 && pdata->ep_address == 0) {
-    //     printf("txn devid = %d, ep = %d\n", pdata->device_id, pdata->ep_address);
-    // }
-
-    // if (setup && pdata->device_id == 4) {
-    //     if (
-    //         setup->bmRequestType == 128 &&
-    //         setup->bRequest == 6 &&
-    //         // setup->wValue == 256 &&
-    //         // setup->wLength == 18 &&
-    //         setup->wIndex == 0
-    //     ) {
-    //         printf("Starting Trasnaction for bad packet\n");
-    //     }
-    // }
 
     dwc_channel_start_transaction(req, channel);
-
-    // // Mask out all interrupts on this channel and clear any interrupts that 
-    // // might be pending as well.
-    // chanptr->interrupt_mask.val = 0;
-    // chanptr->interrupts.val = 0xffffffff;
-
-    // // TODO(gkalsi): Come back to this split control stuff.
-    // // split_control = chanptr->split_control;
-    // // split_control.complete_split = req->complete_split
-    // // chanptr->split_control = split_control
-
-    // chanptr->split_control = split_control;
-    // chanptr->transfer = transfer;
-    // chanptr->characteristics = characteristics;
-
-    // // printf("Initiate Xfer. characteristics = 0x%x, transfer 0x%x\n", characteristics.val, transfer.val);
-
-    // union dwc_host_channel_interrupts interrupt_mask;
-
-    // interrupt_mask.val = 0;
-    // interrupt_mask.channel_halted = 1;
-    // chanptr->interrupt_mask = interrupt_mask;
-    // regs->host_channels_interrupt_mask |= 1 << channel;
 }
 
 static int dwc_xfer_scheduler_thread(void *arg) {
@@ -358,6 +326,12 @@ static int dwc_xfer_scheduler_thread(void *arg) {
 
         mtx_unlock(&pending_transfer_mtx);
 
+        if (!req) {
+            printf("Null request?\n");
+            continue;
+        }
+
+
         dwc_save_request(req, channel);
 
         dwc_start_transfer(req, channel);
@@ -367,7 +341,10 @@ static int dwc_xfer_scheduler_thread(void *arg) {
 }
 
 mx_status_t dwc_queue_transfer(struct dwc_transfer_request* req) {
+
     mtx_lock(&pending_transfer_mtx);
+    
+    assert(req);
 
     list_add_tail(&pending_transfer_list, &req->node);
 

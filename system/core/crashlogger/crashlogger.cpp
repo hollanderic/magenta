@@ -191,8 +191,8 @@ void process_report(const mx_exception_report_t* report) {
         goto Fail;
     }
 
-    printf("bottom of user stack:\n");
-    dump_memory(process, sp, kMemoryDumpSize);
+    printf("bottom of user stack: sp = %lx\n", sp);
+    // dump_memory(process, sp, kMemoryDumpSize);
     printf("arch: %s\n", arch);
     backtrace(process, pc, fp);
 

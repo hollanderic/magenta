@@ -11,6 +11,7 @@
 #include "util.h"
 
 static void usb_device_control_complete(iotxn_t* txn, void* cookie) {
+    printf("Signal completion txn = %p, cookie = %p\n", txn, cookie);
     completion_signal((completion_t*)cookie);
 }
 
