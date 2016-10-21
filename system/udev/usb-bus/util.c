@@ -11,7 +11,7 @@
 #include "util.h"
 
 static void usb_device_control_complete(iotxn_t* txn, void* cookie) {
-    printf("Signal completion txn = %p, cookie = %p\n", txn, cookie);
+    //printf("Signal completion txn = %p, cookie = %p\n", txn, cookie);
     completion_signal((completion_t*)cookie);
 }
 
@@ -49,14 +49,16 @@ mx_status_t usb_device_control(mx_device_t* hci_device, uint32_t device_id,
     iotxn_queue(hci_device, txn);
     completion_wait(&completion, MX_TIME_INFINITE);
 
-    printf("usb_device_control returned\n");
+
 
     status = txn->status;
     if (status == NO_ERROR) {
         status = txn->actual;
 
         if (length > 0 && !out) {
+
             txn->ops->copyfrom(txn, data, txn->actual, 0);
+            printf("usb_device_control returned with %u\n",(uint32_t)status);
         }
     }
     txn->ops->release(txn);

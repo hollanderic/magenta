@@ -302,6 +302,7 @@ static mx_status_t vc_input_device_added(int dirfd, const char* fn, void* cookie
     ssize_t rc = ioctl_input_get_protocol(fd, &proto);
     if (rc > 0 && proto != INPUT_PROTO_KBD) {
         // skip devices that aren't keyboards
+        printf("not a for reals keyboard device... I'm outta here\n");
         close(fd);
         return NO_ERROR;
     }
