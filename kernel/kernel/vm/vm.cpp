@@ -226,6 +226,28 @@ void* paddr_to_kvaddr(paddr_t pa) {
     return nullptr;
 }
 
+bool is_mapped(vaddr_t ptr, uint32_t len){
+
+    for (vaddr_t address = (ptr & ~(PAGE_SIZE-1));
+            address <= ((ptr+len-1) & ~(PAGE_SIZE-1));
+            address += PAGE_SIZE)
+    {
+        vmm_aspace_t* _aspace = vaddr_to_aspace((void *)address);
+
+        if (!_aspace)
+            return false;
+
+        VmAspace* aspace = vmm_aspace_to_obj(_aspace);
+
+        paddr_t pa;
+        status_t rc = arch_mmu_query(&aspace->arch_aspace(), address, &pa, nullptr);
+        if (rc)
+            return false;
+    }
+
+    return true;
+}
+
 paddr_t vaddr_to_paddr(const void* ptr) {
     vmm_aspace_t* _aspace = vaddr_to_aspace(ptr);
     if (!_aspace)

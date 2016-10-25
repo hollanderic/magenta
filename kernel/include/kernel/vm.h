@@ -159,6 +159,9 @@ size_t pmm_free_kpages(void* ptr, size_t count);
 /* physical to virtual */
 void* paddr_to_kvaddr(paddr_t pa);
 
+/* check if vaddr mapped */
+bool is_mapped(vaddr_t va, uint32_t len);
+
 /* virtual to physical */
 paddr_t vaddr_to_paddr(const void* va);
 
