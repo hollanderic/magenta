@@ -108,13 +108,11 @@ static int cmd_display_mem(int argc, const cmd_args *argv)
         return -1;
     }
 
-#if WITH_KERNEL_VM
     /* preflight the start address to see if it's mapped */
-    if (vaddr_to_paddr((void *)address) == 0) {
+    if (!is_mapped((vaddr_t)address,len)) {
         printf("ERROR: address 0x%lx is unmapped\n", address);
         return -1;
     }
-#endif
 
     for ( ; address < stop; address += size) {
         if (count == 0)
@@ -177,6 +175,12 @@ static int cmd_modify_mem(int argc, const cmd_args *argv)
         return -1;
     }
 
+    /* preflight the start address to see if it's mapped */
+    if (!is_mapped((vaddr_t)address, size)) {
+        printf("ERROR: address 0x%lx is unmapped\n", address);
+        return -1;
+    }
+
     switch (size) {
         case 4:
             *(uint32_t *)address = (uint32_t)val;
@@ -220,6 +224,12 @@ static int cmd_fill_mem(int argc, const cmd_args *argv)
         return -1;
     }
 
+    /* preflight the start address to see if it's mapped */
+    if (!is_mapped((vaddr_t)address,len)) {
+        printf("ERROR: address range 0x%lx-0x%lxis unmapped\n", address, address+len);
+        return -1;
+    }
+
     for ( ; address < stop; address += size) {
         switch (size) {
             case 4:
@@ -248,6 +258,12 @@ static int cmd_copy_mem(int argc, const cmd_args *argv)
     addr_t source = argv[1].u;
     addr_t target = argv[2].u;
     size_t len = argv[3].u;
+
+    /* preflight the start address to see if it's mapped */
+    if (!is_mapped((vaddr_t)source,len) || !is_mapped((vaddr_t)target,len)) {
+        printf("ERROR: address 0x%lx or 0x%lx is unmapped\n", source,target);
+        return -1;
+    }
 
     memcpy((void *)target, (const void *)source, len);
 
