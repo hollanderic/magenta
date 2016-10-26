@@ -21,6 +21,60 @@ __BEGIN_CDECLS;
 #define SOC_DID_BROADCOMM_MAILBOX       0x0001  // Videocore mailbox, used for comms between cpu/gpu
 
 
+#define BCM_MAILBOX_REQUEST            0x00000000
+#define BCM_MAILBOX_REQUEST_SUCCESS    0x80000000
+#define BCM_MAILBOX_REQUEST_ERROR      0x80000001
+
+#define BCM_MAILBOX_TAG_GET_POWER_STATE 0x00020001
+#define BCM_MAILBOX_TAG_SET_POWER_STATE 0x00028001
+
+typedef struct {
+    uint32_t tag;
+    uint32_t size;
+    uint32_t len;
+} bcm_tag_header_t;
+
+struct bcm_mailbox_header {
+    uint32_t    buff_size;
+    uint32_t    code;
+};
+
+typedef struct bcm_mailbox_header bcm_mailbox_header_t;
+
+
+typedef struct {
+    bcm_tag_header_t tag_header;
+    union {
+        struct {
+            //uint32_t dev_id;
+        } request;
+        struct {
+            uint32_t dev_id;
+            uint32_t state;
+        } response;
+    } body;
+} bcm_get_powerstate_tag_t;
+
+
+
+typedef struct {
+    uint32_t size;
+    uint32_t code;
+    union {
+        bcm_get_powerstate_tag_t powerstate_tag;
+    } tag;
+} bcm_mailbox_message_t;
+
+
+#define MAILBOX_INIT_TAG(tag_t,id) { \
+    (tag_t)->tag_header.tag = BCM_MAILBOX_TAG_##id; \
+    (tag_t)->tag_header.size = sizeof((tag_t)->body); \
+    (tag_t)->tag_header.len = sizeof((tag_t)->body.request); \
+    }
+
+
+
+
 typedef struct {
     uint32_t phys_width;    //request
     uint32_t phys_height;   //request

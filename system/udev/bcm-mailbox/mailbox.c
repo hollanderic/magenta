@@ -16,6 +16,12 @@
 
 #include "../bcm-common/bcm28xx.h"
 
+
+
+
+
+
+
 // Preserve columns
 // clang-format off
 enum mailbox_channel {
@@ -117,10 +123,81 @@ static mx_status_t mailbox_read(enum mailbox_channel ch, uint32_t* result) {
 
     // The bottom 4 bits represent the channel, shift those away and write the
     // result into the ret parameter.
-    *result = (local_result >> 4);
+    *result = local_result;
 
     return attempts < MAX_MAILBOX_READ_ATTEMPTS ? NO_ERROR : ERR_IO;
 }
+
+
+
+static mx_status_t  bcm_mailbox_get_single(void* buffer, uint32_t len) {
+    mx_status_t ret = NO_ERROR;
+    iotxn_t* txn;
+
+    if (1) {
+
+        // buffer needs to be aligned on 16 byte boundary, pad the alloc to make sure we have room to adjust
+        ret = iotxn_alloc(&txn, 0, len + sizeof(bcm_mailbox_header_t) + 16, 0);
+        if (ret < 0)
+            goto exit;
+
+        mx_paddr_t pa;
+
+        txn->ops->physmap(txn, &pa);
+
+        // calculate offset in buffer that will provide 16 byte alignment (physical)
+        uint32_t offset = (16 - (pa % 16)) % 16;
+
+        printf("attempting get single at 0x%lx\n",pa + offset);
+
+        bcm_mailbox_header_t mb_header;
+        mb_header.code = BCM_MAILBOX_REQUEST;
+        mb_header.buff_size = len + 8;
+
+        txn->ops->copyto(txn, &mb_header, sizeof(bcm_mailbox_header_t), offset);
+
+        txn->ops->copyto(txn, buffer, len, offset + sizeof(bcm_mailbox_header_t));
+
+        ret = mailbox_write(ch_propertytags_tovc, (pa + offset + BCM_SDRAM_BUS_ADDR_BASE));
+        if (ret != NO_ERROR)
+            goto exit;
+
+        uint32_t ack = 0x0;
+        ret = mailbox_read(ch_propertytags_tovc, &ack);
+        if (ret != NO_ERROR)
+            goto exit;
+
+        printf("Success: returned 0x%x\n",ack);
+
+
+    }
+
+exit:
+        txn->ops->release(txn);
+        return ret;
+
+}
+
+static mx_status_t bcm_get_power_state(uint32_t device) {
+
+    uint32_t* temp;
+    bcm_mailbox_message_t message;
+
+    message.code = BCM_MAILBOX_REQUEST;
+    message.size = 8 + sizeof(bcm_get_powerstate_tag_t);
+    MAILBOX_INIT_TAG(&message.tag.powerstate_tag, GET_POWER_STATE );
+
+    bcm_mailbox_get_single(&message,sizeof(message));
+
+    temp = (uint32_t*)&message;
+    printf("pstate dump....\n");
+    for (uint32_t i=0; i< sizeof(message)/4; i++)
+        printf("%u - 0x%x\n",i,temp[i]);
+
+    return NO_ERROR;
+
+}
+
 
 static mx_status_t bcm_vc_get_framebuffer(bcm_fb_desc_t* fb_desc) {
 
@@ -278,6 +355,9 @@ mx_status_t mailbox_bind(mx_driver_t* driver, mx_device_t* parent) {
         free(dev);
         return status;
     }
+
+
+    bcm_get_power_state(2);
 
     bcm_fb_desc_t framebuff_descriptor;
 
