@@ -39,16 +39,15 @@ struct mmu_initial_mapping mmu_initial_mappings[] = {
      .flags = 0,
      .name = "memory"
  },
-#if 0
+
  /* peripherals */
  {
-     .phys = BCM_PERIPH_BASE_PHYS,
-     .virt = BCM_PERIPH_BASE_VIRT,
-     .size = BCM_PERIPH_SIZE,
+     .phys = MSM8898_PERIPH_BASE_PHYS,
+     .virt = MSM8898_PERIPH_BASE_VIRT,
+     .size = MSM8898_PERIPH_SIZE,
      .flags = MMU_INITIAL_MAPPING_FLAG_DEVICE,
-     .name = "bcm peripherals"
+     .name = "msm peripherals"
  },
-#endif
  /* null entry to terminate the list */
  { 0 }
 };
