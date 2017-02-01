@@ -37,7 +37,7 @@ ARM_CPU := cortex-a53
 
 # based on qca boot sequence documentation
 KERNEL_LOAD_OFFSET := 0x00080000
-MEMSIZE ?= 0x80000000 # Limit to 512MB for now (GPU uses 1/2 of the 1GB total)
+MEMSIZE ?= 0x100000000 # Limit to 512MB for now (GPU uses 1/2 of the 1GB total)
 
 GLOBAL_DEFINES += \
 	MEMBASE=$(MEMBASE) \

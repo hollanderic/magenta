@@ -128,6 +128,9 @@ void platform_early_init(void)
     /* add the main memory arena */
     pmm_add_arena(&arena);
 
+    struct list_node list = LIST_INITIAL_VALUE(list);
+    pmm_alloc_range(MEMBASE+0x5800000, 0x1a800000/ PAGE_SIZE, &list);
+
     /* boot the secondary cpus using the Power State Coordintion Interface */
     ulong psci_call_num = 0x84000000 + 3; /* SMC32 CPU_ON */
     psci_call_num += 0x40000000; /* SMC64 */
