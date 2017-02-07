@@ -378,13 +378,14 @@ arm_reset:
 #if WITH_SMP
 .Lsecondary_boot:
     and     tmp, cpuid, #0xff
-    cmp     tmp, #(1 << SMP_CPU_CLUSTER_SHIFT)
-    bge     .Lunsupported_cpu_trap
+//   cmp     tmp, #(1 << SMP_CPU_CLUSTER_SHIFT)
+//    bge     .Lunsupported_cpu_trap
     bic     cpuid, cpuid, #0xff
-    orr     cpuid, tmp, cpuid, LSR #(8 - SMP_CPU_CLUSTER_SHIFT)
+    orr     cpuid, tmp, cpuid, LSR #(8 - 2)
 
-    cmp     cpuid, #SMP_MAX_CPUS
-    bge     .Lunsupported_cpu_trap
+
+//    cmp     cpuid, #SMP_MAX_CPUS
+//    bge     .Lunsupported_cpu_trap
 
     /* Set up the stack */
     ldr     tmp, =__stack_end
@@ -392,6 +393,10 @@ arm_reset:
     mul     tmp2, tmp2, cpuid
     sub     sp, tmp, tmp2
 
+
+
+ //   mrs     cpuid, mpidr_el1
+ //   and     cpuid,cpuid,#0xffff
     mov     x0, cpuid
     bl      arm64_secondary_entry
 
