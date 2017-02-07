@@ -18,6 +18,7 @@
 #include <dev/timer/arm_generic.h>
 #include <dev/display.h>
 #include <dev/hw_rng.h>
+#include <dev/psci.h>
 
 #include <platform.h>
 #include <dev/interrupt.h>
@@ -133,17 +134,42 @@ void platform_early_init(void)
                     (MSM8998_BOOT_APSS2_START - MSM8998_BOOT_HYP_START)/ PAGE_SIZE,
                     &list);
 
+
+    uint32_t pver = get_psci_version();
+    printf("PSCI Version: %08x\n",pver);
+
+
+    uint64_t mpidr = ARM64_READ_SYSREG(MPIDR_EL1);
+    printf("MPIDR: %lx\n",mpidr);
+
     /* boot the secondary cpus using the Power State Coordintion Interface */
     ulong psci_call_num = 0x84000000 + 3; /* SMC32 CPU_ON */
     psci_call_num += 0x40000000; /* SMC64 */
-    for (uint i = 1; i < SMP_MAX_CPUS; i++) {
-        psci_call(psci_call_num, i, MEMBASE + KERNEL_LOAD_OFFSET, 0);
+    uint32_t info;
+    for (uint i = 5; i < 6; i++) {
+        uint32_t cpnum = (i%4) | ( ((i & 0xc) >> 2) << 8);
+        info = get_psci_affinity_info(cpnum);
+
+        printf("CPU:%u  Affinity info:0x%08x\n",cpnum,info);
+
+        printf("trying number %x\n",cpnum);
+
+        info = psci_cpu_on( cpnum  , MEMBASE + KERNEL_LOAD_OFFSET);
+        printf("cpuon returned with %d\n",(int32_t)info);
+        //while(1);;
     }
 }
 
 void platform_init(void)
 {
     uart_init();
+       printf("Rechecking cpu states...\n");
+    uint32_t info;
+    for (uint i = 1; i < 8; i++) {
+        uint32_t cpnum = (i%4) | ( ((i & 0xc) >> 2) << 8);
+        info = get_psci_affinity_info(cpnum);
+        printf("CPU:%u  Affinity info:0x%08x\n",i,info);
+    }
 }
 
 void target_init(void)
