@@ -24,7 +24,6 @@ NOTES
 #include <ddk/device.h>
 #include <ddk/driver.h>
 #include <ddk/binding.h>
-#include <ddk/io-buffer.h>
 #include <ddk/protocol/bcm.h>
 
 #include <magenta/syscalls.h>
@@ -39,6 +38,7 @@ NOTES
 #include <bcm/bcm28xx.h>
 
 #include "pcm.h"
+#include "codec/pcm5122.h"
 
 #define BCM_FIFO_DEADLINE_MS 100
 
@@ -61,16 +61,17 @@ typedef struct {
     mx_driver_t*            driver;
     bcm_pcm_regs_t*         control_regs;
     bcm_gpio_ctrl_t*        gpio_regs;
-    bcm_dma_ctrl_regs_t*    dma_regs;
     volatile uint32_t*      clock_regs;
 
+    bcm_dma_t               dma;
+
     mx_handle_t             stream_ch;
-    mx_handle_t             stream_port;
+    mx_handle_t             buffer_ch;
+    mx_handle_t             pcm_port;
 
     mx_handle_t             buffer_vmo;
     size_t                  buffer_size;        // size of buffer in bytes
 
-    io_buffer_t             ctl_blocks;
     mtx_t buffer_mutex;
     mtx_t mutex;
 
@@ -86,7 +87,8 @@ typedef struct {
 
 } bcm_pcm_t;
 
-//static uint32_t next_cb = 0;
+static mx_status_t pcm_dma_init(bcm_pcm_t* ctx);
+
 
 #define dev_to_bcm_pcm(dev) containerof(dev, bcm_pcm_t, device)
 
@@ -96,9 +98,65 @@ static void pcm_watch_the_world_burn(mx_status_t status,bcm_pcm_t* ctx){
     while(1);;
 }
 
-static mx_status_t pcm_set_stream_fmt(audio2_stream_cmd_set_format_req_t* req) {
-    printf("Audio2 set stream format request\n");
+static void pcm_deinit(bcm_pcm_t* ctx) {
 
+    // Turn off TX/RX, Clear FIFOs, Clear Errors
+    ctx->control_regs->cs           = BCM_PCM_CS_ENABLE | BCM_PCM_CS_TXCLR | BCM_PCM_CS_RXCLR ;
+
+    ctx->control_regs->mode         = BCM_PCM_MODE_INITIAL_STATE;
+    ctx->control_regs->txc          = BCM_PCM_TXC_INITIAL_STATE;
+    ctx->control_regs->rxc          = BCM_PCM_RXC_INITIAL_STATE;
+    ctx->control_regs->dreq_lvl     = BCM_PCM_DREQ_LVL_INITIAL_STATE;
+    ctx->control_regs->cs           = BCM_PCM_CS_INITIAL_STATE;
+    ctx->started = false;
+
+}
+
+static mx_status_t pcm_set_stream_fmt(bcm_pcm_t* ctx, audio2_stream_cmd_set_format_req_t req) {
+    printf("Audio2 set stream format request\n");
+    // This is where we should set up the codec for the format requested
+    //      we also need to create the rb channel, and bind the port to it.
+
+
+    //Check current state, see what we need to shutdown/teardown
+        // Is DMA currently running?
+        // Is the PCM currently running?
+    if (ctx->started) { //currently running, need to bounce back to known state
+        pcm_deinit(ctx);
+    }
+
+    if (ctx->dma.state != BCM_DMA_STATE_SHUTDOWN) {
+        bcm_dma_deinit(&ctx->dma);
+    }
+
+    //if (!pcm5122_is_valid_mode(req)) return ERR_NOT_SUPPORTED;
+
+    // This will need to change once we have new modes
+    ctx->control_regs->cs   = BCM_PCM_CS_ENABLE | BCM_PCM_CS_TXCLR;
+    ctx->control_regs->mode = BCM_PCM_MODE_I2S_16BIT_64BCLK;
+    ctx->control_regs->txc  = BCM_PCM_TXC_I2S_16BIT_64BCLK;
+    ctx->control_regs->cs   = BCM_PCM_CS_ENABLE | BCM_PCM_CS_TXCLR;
+
+    mx_nanosleep(MX_MSEC(10));
+
+    pcm_dma_init(ctx);
+    ctx->control_regs->cs   = BCM_PCM_CS_ENABLE | BCM_PCM_CS_DMAEN | (0x03 << 15);
+    bcm_dma_start(&ctx->dma);
+
+    // turn on i2s transmitter
+    ctx->control_regs->cs   = BCM_PCM_CS_ENABLE | BCM_PCM_CS_DMAEN | BCM_PCM_CS_TXON;
+    //i2s is running at this point
+
+    return pcm5122_init();
+
+
+    //Set up the pcm periperhal for the mode requested
+
+    //Set up the codec for the mode requested
+
+    //Set up the DMA to support the mode requested
+
+    return NO_ERROR;
 }
 
 
@@ -134,8 +192,7 @@ case _ioctl:                                        \
                   req_size, sizeof(req._payload));  \
         return ERR_INVALID_ARGS;                    \
     }                                               \
-    return _handler(req._payload);
-
+    return _handler(ctx, req._payload);
 static int pcm_port_thread(void *arg) {
 
     bcm_pcm_t* ctx = arg;
@@ -146,7 +203,7 @@ static int pcm_port_thread(void *arg) {
     stream_packet_t req;
 
     while (1) {
-        status = mx_port_wait(ctx->stream_port, MX_TIME_INFINITE, &port_out, sizeof(port_out));
+        status = mx_port_wait(ctx->pcm_port, MX_TIME_INFINITE, &port_out, sizeof(port_out));
         if (status != NO_ERROR) pcm_watch_the_world_burn(status,ctx);
 
         mx_handle_t channel = (mx_handle_t)port_out.hdr.key;
@@ -158,7 +215,7 @@ static int pcm_port_thread(void *arg) {
         printf("Read %u of %lu bytes from channel\n",req_size,sizeof(req));
 
         switch(req.hdr.cmd) {
-            HANDLE_REQ(AUDIO2_STREAM_CMD_SET_FORMAT, set_fmt, pcm_set_stream_fmt);
+            HANDLE_REQ(AUDIO2_STREAM_CMD_SET_FORMAT, set_fmt_req, pcm_set_stream_fmt);
         default:
             printf("Unrecognized stream command 0x%04x\n", req.hdr.cmd);
             return ERR_NOT_SUPPORTED;
@@ -167,7 +224,7 @@ static int pcm_port_thread(void *arg) {
 /*
         printf("port.key  %lx\n",port_out.hdr.key);
         printf("port.type  %x\n",port_out.hdr.type);
-        printf("port.signals %x\n",port_out.signals); 
+        printf("port.signals %x\n",port_out.signals);
 */
     }
 
@@ -191,17 +248,17 @@ static ssize_t pcm_audio2_sink_ioctl(mx_device_t* device, uint32_t op,
     if (status != NO_ERROR) return ERR_INTERNAL;
     *reply = ret_handle;
 
-    status = mx_port_create(0,&ctx->stream_port);
+    status = mx_port_create(0,&ctx->pcm_port);
     if (status != NO_ERROR) {
         mx_handle_close(ctx->stream_ch);
         return status;
     }
 
-    status = mx_port_bind( ctx->stream_port, (uint64_t)ctx->stream_ch, ctx->stream_ch, MX_CHANNEL_READABLE | MX_CHANNEL_PEER_CLOSED);
+    status = mx_port_bind( ctx->pcm_port, (uint64_t)ctx->stream_ch, ctx->stream_ch, MX_CHANNEL_READABLE | MX_CHANNEL_PEER_CLOSED);
 
     if (status != NO_ERROR) {
         mx_handle_close(ctx->stream_ch);
-        mx_handle_close(ctx->stream_port);
+        mx_handle_close(ctx->pcm_port);
         return status;
     }
 
@@ -211,7 +268,7 @@ static ssize_t pcm_audio2_sink_ioctl(mx_device_t* device, uint32_t op,
                                         "pcm_port_thread");
     if (thrd_rc != thrd_success) {
         mx_handle_close(ctx->stream_ch);
-        mx_handle_close(ctx->stream_port);
+        mx_handle_close(ctx->pcm_port);
         return thrd_status_to_mx_status(thrd_rc);
     }
     thrd_detach(port_thrd);
@@ -220,77 +277,24 @@ static ssize_t pcm_audio2_sink_ioctl(mx_device_t* device, uint32_t op,
 }
 
 
-static inline void pcm_dma_set_active(bcm_pcm_t* ctx) {
-    ctx->dma_regs->channels[DMA_CHAN].cs |= (BCM_DMA_CS_ACTIVE | BCM_DMA_CS_WAIT);
-}
 
 
 static mx_status_t pcm_dma_init(bcm_pcm_t* ctx) {
 
-    mx_status_t status = mx_vmo_get_size(ctx->buffer_vmo, &ctx->buffer_size);
-    if (status != NO_ERROR) {
-        return status;
-    }
+    mx_status_t status = bcm_dma_init(&ctx->dma, DMA_CHAN);
+    if (status != NO_ERROR) return status;
 
-    uint32_t num_pages = (ctx->buffer_size / BCM_PCM_PAGE_SIZE) +
-                                            (((ctx->buffer_size % BCM_PCM_PAGE_SIZE) > 0)? 1 : 0);
-
-    mx_paddr_t* buf_pages = calloc(num_pages,sizeof(mx_paddr_t));
-
-    status = mx_vmo_op_range(ctx->buffer_vmo, MX_VMO_OP_LOOKUP, 0, ctx->buffer_size, buf_pages, sizeof(mx_paddr_t)*num_pages);
-    if (status != NO_ERROR) goto dma_err;
-
-    /*  Allocate memory for dma control blocks
-            Needs to be 256bit aligned, but we get it for free since this is page aligned.
-            TODO - need to add extra control blocks for buffer position notifications
-    */
-    status = io_buffer_init(&ctx->ctl_blocks, num_pages*sizeof(bcm_dma_cb_t), IO_BUFFER_RW);
-    if (status != NO_ERROR) {
-        printf("\nBCM_PCM: Error Allocating control blocks: %d\n\n",status);
-        goto dma_err;
-    }
-
-    ssize_t total_bytes = ctx->buffer_size;
-    bcm_dma_cb_t* cb = (bcm_dma_cb_t*) io_buffer_virt(&ctx->ctl_blocks);
-
-    for (uint32_t i = 0; i < num_pages; i++) {
-
-        cb[i].transfer_info = BCM_DMA_DREQ_ID_PCM_TX << 16 |
+    uint32_t transfer_info = BCM_DMA_DREQ_ID_PCM_TX << 16 |
                               BCM_DMA_TI_DEST_DREQ         |
                               BCM_DMA_TI_SRC_INC           |
                               BCM_DMA_TI_WAIT_RESP         | (15 << 21);
 
-        cb[i].source_addr   = (uint32_t)( buf_pages[i] | BCM_SDRAM_BUS_ADDR_BASE);
-        cb[i].dest_addr     = 0x7e000000 | ( 0x00ffffff & (uint32_t)(mx_paddr_t)(&((bcm_pcm_regs_t*)I2S_BASE)->fifo));
+    mx_paddr_t dest_addr     = 0x7e000000 | ( 0x00ffffff & (uint32_t)(mx_paddr_t)(&((bcm_pcm_regs_t*)I2S_BASE)->fifo));
 
-        uint32_t tfer_len = (total_bytes > BCM_PCM_PAGE_SIZE) ? BCM_PCM_PAGE_SIZE : total_bytes;
-        cb[i].transfer_len  = tfer_len;
-        total_bytes -= tfer_len;
+    status = bcm_dma_link_vmo_to_peripheral(&ctx->dma, ctx->buffer_vmo,transfer_info,dest_addr);
+    if (status != NO_ERROR) return status;
 
-        uint32_t next_cb_offset = (total_bytes > 0) ? ( sizeof( bcm_dma_cb_t) * (i + 1) ) : 0;
-        cb[i].next_ctl_blk_addr = (uint32_t)( (io_buffer_phys(&ctx->ctl_blocks) + next_cb_offset) |BCM_SDRAM_BUS_ADDR_BASE);
-    }
-
-    io_buffer_cache_op(&ctx->ctl_blocks, MX_VMO_OP_CACHE_CLEAN, 0, num_pages*sizeof(bcm_dma_cb_t));
-
-    bcm_dma_chan_t* dmactl = &ctx->dma_regs->channels[DMA_CHAN];    //Arbitrarily picking dma channel
-
-    dmactl->cs = BCM_DMA_CS_RESET;  //reset the channel
-
-    dmactl->ctl_blk_addr = (uint32_t)(io_buffer_phys(&ctx->ctl_blocks) | BCM_SDRAM_BUS_ADDR_BASE);
-
-#if PCM_TRACE
-    for (uint32_t i = 0; i < num_pages; i++) {
-        printf("Control Block %u    0x%08x\n",i, (uint32_t)(io_buffer_phys(&ctx->ctl_blocks) + sizeof( bcm_dma_cb_t) * i));
-        printf("   Length : %u\n",cb[i].transfer_len);
-        printf("   Start  : 0x%08x\n",cb[i].source_addr);
-        printf("   Next Cb: 0x%08x\n",cb[i].next_ctl_blk_addr);
-    }
-#endif
-
-dma_err:
-    if (buf_pages) free(buf_pages);
-    return status;
+    return NO_ERROR;
 }
 
 static mx_protocol_device_t pcm_audio_ctx_device_proto = {
@@ -317,17 +321,6 @@ static int pcm_bootstrap_thread(void *arg) {
     if (status != NO_ERROR)
         goto pcm_err;
 
-    // Carve out some address space for the dma control registers
-    status = mx_mmap_device_memory(
-        get_root_resource(),
-        DMA_BASE, 0x1000,
-        MX_CACHE_POLICY_UNCACHED_DEVICE, (uintptr_t*)&pcm_ctx->dma_regs);
-
-    if (status != NO_ERROR)
-        goto pcm_err;
-
-    printf("DMA regs at %p\n",pcm_ctx->dma_regs);
-    printf("int status at %p\n",&pcm_ctx->dma_regs->int_status);
 
     // Carve out some address space for the device -- it's memory mapped.
     status = mx_mmap_device_memory(
@@ -352,6 +345,9 @@ static int pcm_bootstrap_thread(void *arg) {
     if (status != NO_ERROR)
         goto pcm_err;
 
+
+
+//  This is temporary until we have working hooks to receive vmo from client
 #define PCM_VMO_SIZE 5000
     status = mx_vmo_create(PCM_VMO_SIZE, 0, &pcm_ctx->buffer_vmo);
     if (status != NO_ERROR) goto pcm_err;
@@ -374,7 +370,7 @@ static int pcm_bootstrap_thread(void *arg) {
 //***************************************************************
 
     set_pcm_clock(pcm_ctx);
-
+#if 0
     pcm_ctx->control_regs->cs   = BCM_PCM_CS_ENABLE | BCM_PCM_CS_TXCLR;
     pcm_ctx->control_regs->mode = BCM_PCM_MODE_I2S_16BIT_64BCLK;
     pcm_ctx->control_regs->txc  = BCM_PCM_TXC_I2S_16BIT_64BCLK;
@@ -385,12 +381,12 @@ static int pcm_bootstrap_thread(void *arg) {
 
     pcm_dma_init(pcm_ctx);
     pcm_ctx->control_regs->cs   = BCM_PCM_CS_ENABLE | BCM_PCM_CS_DMAEN | (0x03 << 15);
-    pcm_dma_set_active(pcm_ctx);
+    bcm_dma_start(&pcm_ctx->dma);
 
     // turn on i2s transmitter
     pcm_ctx->control_regs->cs   = BCM_PCM_CS_ENABLE | BCM_PCM_CS_DMAEN | BCM_PCM_CS_TXON;
     //i2s is running at this point
-
+#endif
     device_init(&pcm_ctx->device, pcm_ctx->driver, "pcm0", &pcm_audio_ctx_device_proto);
 
     pcm_ctx->device.protocol_id = MX_PROTOCOL_AUDIO2_OUTPUT;

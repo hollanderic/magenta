@@ -10,8 +10,10 @@ MODULE_TYPE := driver
 
 MODULE_SRCS += \
     $(LOCAL_DIR)/pcm.c \
+    $(LOCAL_DIR)/codec/pcm5122.c \
 
-MODULE_STATIC_LIBS := ulib/ddk ulib/bcm
+
+MODULE_STATIC_LIBS := ulib/bcm ulib/ddk
 
 MODULE_LIBS := ulib/driver ulib/musl ulib/magenta ulib/mxio
 

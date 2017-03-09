@@ -2,6 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include <ddk/io-buffer.h>
+
 #pragma once
 
 #define BCM_DMA_DREQ_ID_NONE        (0)
@@ -55,3 +57,36 @@ typedef volatile struct {
 
 } bcm_dma_ctrl_regs_t;
 
+typedef enum {
+    unused = 0,
+    configured,
+    running,
+    error,
+} bcm_dma_states_t;
+
+#define BCM_DMA_STATE_SHUTDOWN      (uint32_t)(0)
+#define BCM_DMA_STATE_INITIALIZED   (uint32_t)( 1 << 0)
+#define BCM_DMA_STATE_READY         (uint32_t)( 1 << 1)
+#define BCM_DMA_STATE_RUNNING       (uint32_t)( 1 << 2)
+
+
+
+typedef struct {
+
+    uint32_t            ch_num;
+    io_buffer_t         ctl_blks;
+    uint64_t            ctl_blk_mask;
+    uint32_t            state;
+    mtx_t               mutex;
+
+} bcm_dma_t;
+
+
+
+mx_status_t bcm_dma_get_ctl_blk(bcm_dma_t* dma, bcm_dma_cb_t* cb, mx_paddr_t* pa);
+bool bcm_dma_isrunning(bcm_dma_t* dma);
+mx_status_t bcm_dma_start(bcm_dma_t* dma);
+mx_status_t bcm_dma_init(bcm_dma_t* dma, uint32_t ch);
+mx_status_t bcm_dma_release(bcm_dma_t* dma);
+mx_status_t bcm_dma_link_vmo_to_peripheral(bcm_dma_t* dma, mx_handle_t vmo, uint32_t t_info, mx_paddr_t dest);
+mx_status_t bcm_dma_deinit(bcm_dma_t* dma);

@@ -21,11 +21,19 @@ typedef volatile struct {
 
 } bcm_pcm_regs_t;
 
+#define BCM_PCM_MODE_INITIAL_STATE      (uint32_t)(0)
+#define BCM_PCM_TXC_INITIAL_STATE       (uint32_t)(0)
+#define BCM_PCM_RXC_INITIAL_STATE       (uint32_t)(0)
+#define BCM_PCM_DREQ_LVL_INITIAL_STATE  (uint32_t)( (0x20) | (0x30 << 8) | (0x30 << 16) | (0x10 <<24) )
+#define BCM_PCM_CS_INITIAL_STATE        (uint32_t)(0)
+
+
 #define BCM_PCM_CS_ENABLE               (uint32_t)(0x00000001)
 #define BCM_PCM_CS_TXW                  (uint32_t)( 1 << 17)
 #define BCM_PCM_CS_DMAEN                (uint32_t)( 1 << 9 )
 #define BCM_PCM_CS_TXTHR                (uint32_t)( 1 << 5 )         // Set when less than full
 #define BCM_PCM_CS_TXCLR                (uint32_t)( 1 << 3 )
+#define BCM_PCM_CS_RXCLR                (uint32_t)( 1 << 4 )
 #define BCM_PCM_CS_TXON                 (uint32_t)( 1 << 2 )
 
 
