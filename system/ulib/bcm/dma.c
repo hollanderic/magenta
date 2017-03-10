@@ -82,6 +82,8 @@ mx_status_t bcm_dma_link_vmo_to_peripheral(bcm_dma_t* dma, mx_handle_t vmo, uint
     if (status != NO_ERROR) goto dma_link_err;
 
     ssize_t total_bytes = buffsize;
+    printf("DMA BUFFSIZE: %lu\n",buffsize);
+    printf("DMA NUMPAGES: %u\n",num_pages);
 
     bcm_dma_cb_t* cb = (bcm_dma_cb_t*) io_buffer_virt(&dma->ctl_blks);
 

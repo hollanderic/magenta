@@ -53,6 +53,13 @@ typedef union {
     audio2_stream_cmd_set_format_req_t      set_fmt_req;
 } stream_packet_t;
 
+typedef union {
+    audio2_cmd_hdr_t                        hdr;
+    audio2_rb_cmd_set_buffer_req_t          set_buffer_req;
+    audio2_rb_cmd_start_req_t               start_req;
+    audio2_rb_cmd_stop_req_t                stop_req;
+} buffer_packet_t;
+
 
 typedef struct {
 
@@ -71,6 +78,7 @@ typedef struct {
 
     mx_handle_t             buffer_vmo;
     size_t                  buffer_size;        // size of buffer in bytes
+    uint32_t                buffer_notifications;
 
     mtx_t buffer_mutex;
     mtx_t mutex;
@@ -112,8 +120,28 @@ static void pcm_deinit(bcm_pcm_t* ctx) {
 
 }
 
+static mx_status_t pcm_start(bcm_pcm_t* ctx, audio2_rb_cmd_start_req_t req, void* dummy, uint32_t none) {
+
+    audio2_rb_cmd_start_resp_t resp;
+    //Stuff below should actually be in the start handler
+    ctx->control_regs->cs   = BCM_PCM_CS_ENABLE | BCM_PCM_CS_DMAEN | (0x03 << 15);
+    bcm_dma_start(&ctx->dma);
+    // turn on i2s transmitter
+    ctx->control_regs->cs   = BCM_PCM_CS_ENABLE | BCM_PCM_CS_DMAEN | BCM_PCM_CS_TXON;
+    resp.start_ticks = mx_ticks_get();
+    resp.result = NO_ERROR;
+    resp.hdr.transaction_id = req.hdr.transaction_id;
+    resp.hdr.cmd = req.hdr.cmd;
+
+    return mx_channel_write( ctx->buffer_ch, 0, &resp, sizeof(resp), NULL, 0);
+    //i2s is running at this point
+}
+
+
+
 static mx_status_t pcm_set_stream_fmt(bcm_pcm_t* ctx, audio2_stream_cmd_set_format_req_t req) {
     printf("Audio2 set stream format request\n");
+    mx_status_t status;
     // This is where we should set up the codec for the format requested
     //      we also need to create the rb channel, and bind the port to it.
 
@@ -140,15 +168,30 @@ static mx_status_t pcm_set_stream_fmt(bcm_pcm_t* ctx, audio2_stream_cmd_set_form
     mx_nanosleep(MX_MSEC(10));
 
     pcm_dma_init(ctx);
-    ctx->control_regs->cs   = BCM_PCM_CS_ENABLE | BCM_PCM_CS_DMAEN | (0x03 << 15);
-    bcm_dma_start(&ctx->dma);
 
-    // turn on i2s transmitter
-    ctx->control_regs->cs   = BCM_PCM_CS_ENABLE | BCM_PCM_CS_DMAEN | BCM_PCM_CS_TXON;
-    //i2s is running at this point
 
-    return pcm5122_init();
+    // Might make sense to split the codec init vs codec start
+    status = pcm5122_init();
+    if (status != NO_ERROR) return status;
 
+    mx_handle_t ret_handle;
+    status = mx_channel_create(0, &ctx->buffer_ch, &ret_handle);
+    if (status != NO_ERROR) return ERR_INTERNAL;
+
+    status = mx_port_bind( ctx->pcm_port, (uint64_t)ctx->buffer_ch, ctx->buffer_ch, MX_CHANNEL_READABLE | MX_CHANNEL_PEER_CLOSED);
+
+    if (status != NO_ERROR) {
+        pcm_watch_the_world_burn(status,ctx);
+        return status;
+    }
+
+    audio2_stream_cmd_set_format_resp_t resp;
+    resp.hdr.transaction_id = req.hdr.transaction_id;
+    resp.hdr.cmd = AUDIO2_STREAM_CMD_SET_FORMAT;
+    resp.result = NO_ERROR;
+
+    status = mx_channel_write( ctx->stream_ch, 0, &resp, sizeof(resp), &ret_handle, 1 );
+    return status;
 
     //Set up the pcm periperhal for the mode requested
 
@@ -156,7 +199,6 @@ static mx_status_t pcm_set_stream_fmt(bcm_pcm_t* ctx, audio2_stream_cmd_set_form
 
     //Set up the DMA to support the mode requested
 
-    return NO_ERROR;
 }
 
 
@@ -184,6 +226,35 @@ static void pcm_audio_sink_unbind(mx_device_t* device) {
     device_remove(&ctx->device);
 }
 
+
+static mx_status_t pcm_set_buffer(bcm_pcm_t* ctx, audio2_rb_cmd_set_buffer_req_t req, mx_handle_t vmo) {
+
+    ctx->buffer_vmo = vmo;
+    ctx->buffer_size = req.ring_buffer_bytes;
+    printf("recieved %lu byte vmo\n",ctx->buffer_size);
+    ctx->buffer_notifications = req.notifications_per_ring;
+    printf("doing %d notifications per ring\n",ctx->buffer_notifications);
+
+
+    uint32_t transfer_info =  BCM_DMA_DREQ_ID_PCM_TX << 16 |
+                              BCM_DMA_TI_DEST_DREQ         |
+                              BCM_DMA_TI_SRC_INC           |
+                              BCM_DMA_TI_WAIT_RESP         | (15 << 21);
+
+    mx_paddr_t dest_addr     = 0x7e000000 | ( 0x00ffffff & (uint32_t)(mx_paddr_t)(&((bcm_pcm_regs_t*)I2S_BASE)->fifo));
+
+    mx_status_t status = bcm_dma_link_vmo_to_peripheral(&ctx->dma, ctx->buffer_vmo, transfer_info, dest_addr);
+
+
+    audio2_rb_cmd_set_buffer_resp_t resp;
+    resp.hdr.cmd = req.hdr.cmd;
+    resp.hdr.transaction_id = req.hdr.transaction_id;
+    resp.result = status;
+
+    status = mx_channel_write( ctx->buffer_ch, 0, &resp, sizeof(resp), NULL, 0);
+    return status;
+}
+
 #define HANDLE_REQ(_ioctl, _payload, _handler)      \
 case _ioctl:                                        \
     if (req_size != sizeof(req._payload)) {         \
@@ -192,7 +263,7 @@ case _ioctl:                                        \
                   req_size, sizeof(req._payload));  \
         return ERR_INVALID_ARGS;                    \
     }                                               \
-    return _handler(ctx, req._payload);
+    _handler(ctx, req._payload);
 static int pcm_port_thread(void *arg) {
 
     bcm_pcm_t* ctx = arg;
@@ -201,26 +272,59 @@ static int pcm_port_thread(void *arg) {
     mx_io_packet_t port_out;
 
     stream_packet_t req;
+    buffer_packet_t buff_req;
 
     while (1) {
+        printf("waiting again...\n");
         status = mx_port_wait(ctx->pcm_port, MX_TIME_INFINITE, &port_out, sizeof(port_out));
         if (status != NO_ERROR) pcm_watch_the_world_burn(status,ctx);
 
         mx_handle_t channel = (mx_handle_t)port_out.hdr.key;
+        printf("Got port key:%lx\n",port_out.hdr.key);
+        printf("Got port type:%x\n",port_out.hdr.type);
+        printf("Got port extra:%x\n",port_out.hdr.extra);
+        printf("Got port signals:%x\n",port_out.signals);
         uint32_t req_size;
 
-        status = mx_channel_read(channel,0,&req,sizeof(req),&req_size,NULL,0,NULL);
-        if (status != NO_ERROR) pcm_watch_the_world_burn(status,ctx);
+        if (channel == ctx->stream_ch) {
 
-        printf("Read %u of %lu bytes from channel\n",req_size,sizeof(req));
+            status = mx_channel_read(channel,0,&req,sizeof(req),&req_size,NULL,0,NULL);
+            if (status != NO_ERROR) pcm_watch_the_world_burn(status,ctx);
+            printf("Read %u of %lu bytes from stream channel\n",req_size,sizeof(req));
 
-        switch(req.hdr.cmd) {
-            HANDLE_REQ(AUDIO2_STREAM_CMD_SET_FORMAT, set_fmt_req, pcm_set_stream_fmt);
-        default:
-            printf("Unrecognized stream command 0x%04x\n", req.hdr.cmd);
-            return ERR_NOT_SUPPORTED;
+            switch(req.hdr.cmd) {
+                HANDLE_REQ(AUDIO2_STREAM_CMD_SET_FORMAT, set_fmt_req, pcm_set_stream_fmt);
+                break;
+            default:
+                printf("Unrecognized stream command 0x%04x\n", req.hdr.cmd);
+                return ERR_NOT_SUPPORTED;
+            }
+        } else if(channel == ctx->buffer_ch) {
+
+            if (port_out.signals == MX_CHANNEL_READABLE) {
+                mx_handle_t handles[4];
+                uint32_t num_handles;
+                status = mx_channel_read(channel,0,&buff_req,sizeof(buff_req),&req_size,handles,4,&num_handles);
+                if (status != NO_ERROR) pcm_watch_the_world_burn(status,ctx);
+                printf("Read %u of %lu bytes from buffer channel\n",req_size,sizeof(req));
+                printf("    Got command 0x%04x\n",req.hdr.cmd);
+                printf("    Received %u handles\n",num_handles);
+                switch(buff_req.hdr.cmd) {
+                    case AUDIO2_RB_CMD_SET_BUFFER:
+                        pcm_set_buffer(ctx,buff_req.set_buffer_req,handles[0]);
+                        break;
+
+                    case AUDIO2_RB_CMD_START:
+                        pcm_start(ctx,buff_req.start_req,NULL,0);
+                    case AUDIO2_RB_CMD_STOP:
+                    case AUDIO2_STREAM_CMD_SET_FORMAT:
+                    case AUDIO2_RB_POSITION_NOTIFY:
+                    default:
+                        printf("unrecognized buffer command\n");
+                }
+            }
+
         }
-
 /*
         printf("port.key  %lx\n",port_out.hdr.key);
         printf("port.type  %x\n",port_out.hdr.type);
@@ -284,16 +388,6 @@ static mx_status_t pcm_dma_init(bcm_pcm_t* ctx) {
     mx_status_t status = bcm_dma_init(&ctx->dma, DMA_CHAN);
     if (status != NO_ERROR) return status;
 
-    uint32_t transfer_info = BCM_DMA_DREQ_ID_PCM_TX << 16 |
-                              BCM_DMA_TI_DEST_DREQ         |
-                              BCM_DMA_TI_SRC_INC           |
-                              BCM_DMA_TI_WAIT_RESP         | (15 << 21);
-
-    mx_paddr_t dest_addr     = 0x7e000000 | ( 0x00ffffff & (uint32_t)(mx_paddr_t)(&((bcm_pcm_regs_t*)I2S_BASE)->fifo));
-
-    status = bcm_dma_link_vmo_to_peripheral(&ctx->dma, ctx->buffer_vmo,transfer_info,dest_addr);
-    if (status != NO_ERROR) return status;
-
     return NO_ERROR;
 }
 
@@ -346,7 +440,7 @@ static int pcm_bootstrap_thread(void *arg) {
         goto pcm_err;
 
 
-
+#if 0
 //  This is temporary until we have working hooks to receive vmo from client
 #define PCM_VMO_SIZE 5000
     status = mx_vmo_create(PCM_VMO_SIZE, 0, &pcm_ctx->buffer_vmo);
@@ -368,7 +462,7 @@ static int pcm_bootstrap_thread(void *arg) {
     }
     mx_vmo_op_range(pcm_ctx->buffer_vmo, MX_VMO_OP_CACHE_CLEAN, 0, 5000, NULL, 0);
 //***************************************************************
-
+#endif
     set_pcm_clock(pcm_ctx);
 #if 0
     pcm_ctx->control_regs->cs   = BCM_PCM_CS_ENABLE | BCM_PCM_CS_TXCLR;
