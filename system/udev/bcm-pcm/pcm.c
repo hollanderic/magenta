@@ -28,6 +28,7 @@ NOTES
 #include <ddk/protocol/bcm.h>
 
 #include <magenta/syscalls.h>
+#include <magenta/syscalls/port.h>
 #include <magenta/threads.h>
 #include <magenta/device/i2c.h>
 #include <magenta/device/audio2.h>
@@ -46,6 +47,12 @@ NOTES
 
 #define DMA_CHAN 11
 #define PCM_TRACE 0
+
+typedef union {
+    audio2_cmd_hdr_t                        hdr;
+    audio2_stream_cmd_set_format_req_t      set_fmt_req;
+} stream_packet_t;
+
 
 typedef struct {
 
@@ -84,6 +91,16 @@ typedef struct {
 #define dev_to_bcm_pcm(dev) containerof(dev, bcm_pcm_t, device)
 
 
+static void pcm_watch_the_world_burn(mx_status_t status,bcm_pcm_t* ctx){
+    printf("Some really bad shit happened, need to tear it all down\n");
+    while(1);;
+}
+
+static mx_status_t pcm_set_stream_fmt(audio2_stream_cmd_set_format_req_t* req) {
+    printf("Audio2 set stream format request\n");
+
+}
+
 
 static void set_pcm_clock(bcm_pcm_t* pcm_ctx) {
     volatile uint32_t* pcmclk = &pcm_ctx->clock_regs[0x26];
@@ -109,6 +126,55 @@ static void pcm_audio_sink_unbind(mx_device_t* device) {
     device_remove(&ctx->device);
 }
 
+#define HANDLE_REQ(_ioctl, _payload, _handler)      \
+case _ioctl:                                        \
+    if (req_size != sizeof(req._payload)) {         \
+        printf("Bad " #_payload                     \
+                  " reqonse length (%u != %zu)\n",  \
+                  req_size, sizeof(req._payload));  \
+        return ERR_INVALID_ARGS;                    \
+    }                                               \
+    return _handler(req._payload);
+
+static int pcm_port_thread(void *arg) {
+
+    bcm_pcm_t* ctx = arg;
+    mx_status_t status;
+
+    mx_io_packet_t port_out;
+
+    stream_packet_t req;
+
+    while (1) {
+        status = mx_port_wait(ctx->stream_port, MX_TIME_INFINITE, &port_out, sizeof(port_out));
+        if (status != NO_ERROR) pcm_watch_the_world_burn(status,ctx);
+
+        mx_handle_t channel = (mx_handle_t)port_out.hdr.key;
+        uint32_t req_size;
+
+        status = mx_channel_read(channel,0,&req,sizeof(req),&req_size,NULL,0,NULL);
+        if (status != NO_ERROR) pcm_watch_the_world_burn(status,ctx);
+
+        printf("Read %u of %lu bytes from channel\n",req_size,sizeof(req));
+
+        switch(req.hdr.cmd) {
+            HANDLE_REQ(AUDIO2_STREAM_CMD_SET_FORMAT, set_fmt, pcm_set_stream_fmt);
+        default:
+            printf("Unrecognized stream command 0x%04x\n", req.hdr.cmd);
+            return ERR_NOT_SUPPORTED;
+        }
+
+/*
+        printf("port.key  %lx\n",port_out.hdr.key);
+        printf("port.type  %x\n",port_out.hdr.type);
+        printf("port.signals %x\n",port_out.signals); 
+*/
+    }
+
+    return -1;
+}
+
+
 static ssize_t pcm_audio2_sink_ioctl(mx_device_t* device, uint32_t op,
                           const void* in_buf, size_t in_len,
                           void* out_buf, size_t out_len) {
@@ -118,17 +184,39 @@ static ssize_t pcm_audio2_sink_ioctl(mx_device_t* device, uint32_t op,
 
     if (op != AUDIO2_IOCTL_GET_CHANNEL) return ERR_INVALID_ARGS;
 
-    if (ctx->stream_ch != NULL) return ERR_BAD_STATE;
+    if (ctx->stream_ch != MX_HANDLE_INVALID) return ERR_BAD_STATE;
 
-    printf("BCMPCM: ioctl get channel\n");
     mx_handle_t ret_handle;
     mx_status_t status = mx_channel_create(0, &ctx->stream_ch, &ret_handle);
     if (status != NO_ERROR) return ERR_INTERNAL;
     *reply = ret_handle;
 
+    status = mx_port_create(0,&ctx->stream_port);
+    if (status != NO_ERROR) {
+        mx_handle_close(ctx->stream_ch);
+        return status;
+    }
 
+    status = mx_port_bind( ctx->stream_port, (uint64_t)ctx->stream_ch, ctx->stream_ch, MX_CHANNEL_READABLE | MX_CHANNEL_PEER_CLOSED);
 
-    return sizeof(mx_handle_t);
+    if (status != NO_ERROR) {
+        mx_handle_close(ctx->stream_ch);
+        mx_handle_close(ctx->stream_port);
+        return status;
+    }
+
+    thrd_t port_thrd;
+    int thrd_rc = thrd_create_with_name(&port_thrd,
+                                        pcm_port_thread, ctx,
+                                        "pcm_port_thread");
+    if (thrd_rc != thrd_success) {
+        mx_handle_close(ctx->stream_ch);
+        mx_handle_close(ctx->stream_port);
+        return thrd_status_to_mx_status(thrd_rc);
+    }
+    thrd_detach(port_thrd);
+
+    return NO_ERROR;
 }
 
 
@@ -305,7 +393,7 @@ static int pcm_bootstrap_thread(void *arg) {
 
     device_init(&pcm_ctx->device, pcm_ctx->driver, "pcm0", &pcm_audio_ctx_device_proto);
 
-    pcm_ctx->device.protocol_id = MX_PROTOCOL_AUDIO;
+    pcm_ctx->device.protocol_id = MX_PROTOCOL_AUDIO2_OUTPUT;
     pcm_ctx->device.protocol_ops = NULL;
 
     status = device_add(&pcm_ctx->device, pcm_ctx->parent);
