@@ -316,6 +316,7 @@ static int pcm_port_thread(void *arg) {
 
                     case AUDIO2_RB_CMD_START:
                         pcm_start(ctx,buff_req.start_req,NULL,0);
+                        break;
                     case AUDIO2_RB_CMD_STOP:
                     case AUDIO2_STREAM_CMD_SET_FORMAT:
                     case AUDIO2_RB_POSITION_NOTIFY:
