@@ -70,14 +70,22 @@ typedef enum {
 #define BCM_DMA_STATE_RUNNING       (uint32_t)( 1 << 2)
 
 
+typedef struct {
+    mx_paddr_t  paddr;
+    uint32_t    offset;
+    uint32_t    len;
+} bcm_dma_vmo_index_t;
+
 
 typedef struct {
 
-    uint32_t            ch_num;
-    io_buffer_t         ctl_blks;
-    uint64_t            ctl_blk_mask;
-    uint32_t            state;
-    mtx_t               mutex;
+    uint32_t                ch_num;
+    io_buffer_t             ctl_blks;
+    uint64_t                ctl_blk_mask;
+    uint32_t                state;
+    mtx_t                   mutex;
+    bcm_dma_vmo_index_t*    vmo_idx;
+    uint32_t                vmo_idx_len;
 
 } bcm_dma_t;
 
@@ -90,3 +98,5 @@ mx_status_t bcm_dma_init(bcm_dma_t* dma, uint32_t ch);
 mx_status_t bcm_dma_release(bcm_dma_t* dma);
 mx_status_t bcm_dma_link_vmo_to_peripheral(bcm_dma_t* dma, mx_handle_t vmo, uint32_t t_info, mx_paddr_t dest);
 mx_status_t bcm_dma_deinit(bcm_dma_t* dma);
+mx_status_t bcm_dma_paddr_to_offset(bcm_dma_t* dma, mx_paddr_t paddr, uint32_t* offset);
+mx_paddr_t bcm_dma_get_position(bcm_dma_t* dma);

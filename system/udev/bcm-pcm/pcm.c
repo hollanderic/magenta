@@ -83,7 +83,7 @@ typedef struct {
     mtx_t buffer_mutex;
     mtx_t mutex;
 
-    bool started;
+    bool running;
     bool dead;
 
     uint32_t* sample_rates;
@@ -116,9 +116,33 @@ static void pcm_deinit(bcm_pcm_t* ctx) {
     ctx->control_regs->rxc          = BCM_PCM_RXC_INITIAL_STATE;
     ctx->control_regs->dreq_lvl     = BCM_PCM_DREQ_LVL_INITIAL_STATE;
     ctx->control_regs->cs           = BCM_PCM_CS_INITIAL_STATE;
-    ctx->started = false;
+    ctx->running = false;
 
 }
+
+static int pcm_notify_thread(void* arg) {
+
+    bcm_pcm_t* ctx = arg;
+
+    uint32_t offset=0;
+
+    uint32_t notify_period = (1000000 * ctx->buffer_size) / (ctx->sample_rate * 4 * ctx->buffer_notifications);
+    printf("BCMPCM: Notification interval = %uuS\n",notify_period);
+    while (ctx->running) {
+        mx_nanosleep(MX_USEC(notify_period));
+        mx_paddr_t pos = bcm_dma_get_position(&ctx->dma);
+        //printf("DMA at phys: %lx\n",pos);
+        bcm_dma_paddr_to_offset(&ctx->dma,pos,&offset);
+        //printf("DMA at offset %u\n",offset);
+        audio2_rb_position_notify_t resp;
+        resp.hdr.cmd = AUDIO2_RB_POSITION_NOTIFY;
+        resp.ring_buffer_pos = offset;
+        mx_channel_write( ctx->buffer_ch, 0, &resp, sizeof(resp), NULL, 0);
+    }
+
+    return 0;
+}
+
 
 static mx_status_t pcm_start(bcm_pcm_t* ctx, audio2_rb_cmd_start_req_t req, void* dummy, uint32_t none) {
 
@@ -129,6 +153,18 @@ static mx_status_t pcm_start(bcm_pcm_t* ctx, audio2_rb_cmd_start_req_t req, void
     // turn on i2s transmitter
     ctx->control_regs->cs   = BCM_PCM_CS_ENABLE | BCM_PCM_CS_DMAEN | BCM_PCM_CS_TXON;
     resp.start_ticks = mx_ticks_get();
+    ctx->running = true;
+
+    thrd_t notify_thrd;
+    int thrd_rc = thrd_create_with_name(&notify_thrd,
+                                        pcm_notify_thread, ctx,
+                                        "pcm_notify_thread");
+    if (thrd_rc != thrd_success) {
+        return thrd_status_to_mx_status(thrd_rc);
+    }
+    thrd_detach(notify_thrd);
+
+
     resp.result = NO_ERROR;
     resp.hdr.transaction_id = req.hdr.transaction_id;
     resp.hdr.cmd = req.hdr.cmd;
@@ -149,7 +185,7 @@ static mx_status_t pcm_set_stream_fmt(bcm_pcm_t* ctx, audio2_stream_cmd_set_form
     //Check current state, see what we need to shutdown/teardown
         // Is DMA currently running?
         // Is the PCM currently running?
-    if (ctx->started) { //currently running, need to bounce back to known state
+    if (ctx->running) { //currently running, need to bounce back to known state
         pcm_deinit(ctx);
     }
 
@@ -164,6 +200,7 @@ static mx_status_t pcm_set_stream_fmt(bcm_pcm_t* ctx, audio2_stream_cmd_set_form
     ctx->control_regs->mode = BCM_PCM_MODE_I2S_16BIT_64BCLK;
     ctx->control_regs->txc  = BCM_PCM_TXC_I2S_16BIT_64BCLK;
     ctx->control_regs->cs   = BCM_PCM_CS_ENABLE | BCM_PCM_CS_TXCLR;
+    ctx->sample_rate = 44100;
 
     mx_nanosleep(MX_MSEC(10));
 

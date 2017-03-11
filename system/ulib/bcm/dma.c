@@ -59,6 +59,55 @@ mx_status_t bcm_dma_init(bcm_dma_t* dma, uint32_t ch) {
     return NO_ERROR;
 }
 
+mx_paddr_t bcm_dma_get_position(bcm_dma_t* dma) {
+    uint32_t address = (dma_regs->channels[ dma->ch_num ].source_addr) & 0x0fffffff;
+    return (mx_paddr_t)address;
+}
+
+mx_status_t bcm_dma_paddr_to_offset(bcm_dma_t* dma, mx_paddr_t paddr, uint32_t* offset) {
+
+    *offset = 10;
+    for (uint32_t i = 0; i < dma->vmo_idx_len; i++) {
+        //printf("%2u %lx  %u\n",i,dma->vmo_idx[i].paddr,dma->vmo_idx[i].len);
+        if ( (paddr >= dma->vmo_idx[i].paddr) && ( paddr < (dma->vmo_idx[i].paddr + dma->vmo_idx[i].len)) ) {
+            *offset =  dma->vmo_idx[i].offset + (paddr - dma->vmo_idx[i].paddr);
+            return NO_ERROR;
+        }
+    }
+    return ERR_OUT_OF_RANGE;
+
+}
+
+static mx_status_t bcm_dma_build_vmo_index(bcm_dma_t* dma, mx_paddr_t* page_list, uint32_t len) {
+
+    dma->vmo_idx = calloc(len,sizeof(bcm_dma_vmo_index_t));  //Allocate worse sized array
+    if (!dma->vmo_idx) return ERR_NO_MEMORY;
+
+    dma->vmo_idx_len = 0;
+    uint32_t j = 0;
+
+    for( uint32_t i = 0; i < len; i++) {
+
+        for (j = 0; ((page_list[i]  > dma->vmo_idx[j].paddr) && (dma->vmo_idx[j].paddr != 0)); j++);
+
+        if (( j != 0) && ( page_list[i] == (dma->vmo_idx[j - 1].paddr + dma->vmo_idx[j - 1].len)  )) {
+
+            dma->vmo_idx[j-1].len += BCM_DMA_PAGE_SIZE;
+
+        } else {
+
+            for( uint32_t k = dma->vmo_idx_len ; k > j; k--) {
+                memcpy( &dma->vmo_idx[k+1] , &dma->vmo_idx[k], sizeof(bcm_dma_vmo_index_t));
+            }
+            dma->vmo_idx[j].paddr = page_list[i];
+            dma->vmo_idx[j].offset = i * BCM_DMA_PAGE_SIZE;
+            dma->vmo_idx[j].len = BCM_DMA_PAGE_SIZE;
+            dma->vmo_idx_len++;
+        }
+    }
+    return NO_ERROR;
+}
+
 /*
     Takes a vmo and links together control blocks, one for each page in vmo
         This assumes a transfer to single non-incrementing address paddr
@@ -81,6 +130,19 @@ mx_status_t bcm_dma_link_vmo_to_peripheral(bcm_dma_t* dma, mx_handle_t vmo, uint
     status = mx_vmo_op_range(vmo, MX_VMO_OP_LOOKUP, 0, buffsize, buf_pages, sizeof(mx_paddr_t)*num_pages);
     if (status != NO_ERROR) goto dma_link_err;
 
+ //   for (uint32_t i = 0; i < num_pages; i++)
+ //       printf("%2u -- %lx\n",i,buf_pages[i]);
+
+    status = bcm_dma_build_vmo_index(dma,buf_pages,num_pages);
+    if (status != NO_ERROR) goto dma_link_err;
+/*
+    for (uint32_t i=0; i < num_pages; i++) {
+        printf("Index:%2u\n",i);
+        printf("   paddr : 0x%lx\n",dma->vmo_idx[i].paddr);
+        printf("   offset: %u\n",dma->vmo_idx[i].offset);
+        printf("      len: %u\n",dma->vmo_idx[i].len);
+    }
+*/
     ssize_t total_bytes = buffsize;
     printf("DMA BUFFSIZE: %lu\n",buffsize);
     printf("DMA NUMPAGES: %u\n",num_pages);
@@ -106,9 +168,16 @@ mx_status_t bcm_dma_link_vmo_to_peripheral(bcm_dma_t* dma, mx_handle_t vmo, uint
     io_buffer_cache_op(&dma->ctl_blks, MX_VMO_OP_CACHE_CLEAN, 0, num_pages*sizeof(bcm_dma_cb_t));
 
     dma->state |= BCM_DMA_STATE_READY;
+    if (buf_pages) free(buf_pages);
+
+    return NO_ERROR;
 
 dma_link_err:
     if (buf_pages) free(buf_pages);
+    if (dma->vmo_idx) {
+        free(dma->vmo_idx);
+        dma->vmo_idx_len=0;
+    }
     return status;
 }
 
