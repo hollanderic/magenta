@@ -10,7 +10,7 @@ MODULE_TYPE := driver
 
 MODULE_SRCS += \
     $(LOCAL_DIR)/pcm.c \
-    $(LOCAL_DIR)/codec/pcm5122.c \
+    $(LOCAL_DIR)/codec/hifi-berry.c \
 
 
 MODULE_STATIC_LIBS := ulib/bcm ulib/ddk

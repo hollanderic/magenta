@@ -38,12 +38,16 @@ NOTES
 #include <bcm/bcm28xx.h>
 
 #include "pcm.h"
-#include "codec/pcm5122.h"
+#include "codec/hifi-berry.h"
 
 #define BCM_FIFO_DEADLINE_MS 100
 
 //ideally we would get this from system, just putting it here now for reference
 #define BCM_PCM_PAGE_SIZE   4096
+
+// Raspberry Pi reference crystal 19.2MHz
+#define BCM_PCM_REF_FREQUENCY   19200000
+#define BCM_PCM_BCLK_PER_FRAME  64
 
 #define DMA_CHAN 11
 #define PCM_TRACE 0
@@ -106,6 +110,21 @@ static void pcm_watch_the_world_burn(mx_status_t status,bcm_pcm_t* ctx){
     while(1);;
 }
 
+static void set_pcm_clock(bcm_pcm_t* pcm_ctx) {
+
+    volatile uint32_t* pcmclk = &pcm_ctx->clock_regs[0x26];
+    volatile uint32_t* pcmdiv = &pcm_ctx->clock_regs[0x27];
+//Set the divider as a 4.12 number
+
+    uint64_t divider = ((uint64_t)BCM_PCM_REF_FREQUENCY*4096)/(pcm_ctx->sample_rate * BCM_PCM_BCLK_PER_FRAME);
+    uint32_t denom = (pcm_ctx->sample_rate * BCM_PCM_BCLK_PER_FRAME);
+    printf("BCMPCM: using %lx as divider value %x\n",divider,denom);
+
+    *pcmclk = 0x5a000021;
+    *pcmdiv = 0x5a000000 | (uint32_t)divider;
+    *pcmclk = 0x5a000211;
+}
+
 static void pcm_deinit(bcm_pcm_t* ctx) {
 
     // Turn off TX/RX, Clear FIFOs, Clear Errors
@@ -154,6 +173,7 @@ static mx_status_t pcm_start(bcm_pcm_t* ctx, audio2_rb_cmd_start_req_t req, void
     ctx->control_regs->cs   = BCM_PCM_CS_ENABLE | BCM_PCM_CS_DMAEN | BCM_PCM_CS_TXON;
     resp.start_ticks = mx_ticks_get();
     ctx->running = true;
+    hifiberry_start();
 
     thrd_t notify_thrd;
     int thrd_rc = thrd_create_with_name(&notify_thrd,
@@ -195,12 +215,18 @@ static mx_status_t pcm_set_stream_fmt(bcm_pcm_t* ctx, audio2_stream_cmd_set_form
 
     //if (!pcm5122_is_valid_mode(req)) return ERR_NOT_SUPPORTED;
 
+
+    ctx->sample_rate = req.frames_per_second;
+
+    set_pcm_clock(ctx);
+
+
     // This will need to change once we have new modes
     ctx->control_regs->cs   = BCM_PCM_CS_ENABLE | BCM_PCM_CS_TXCLR;
     ctx->control_regs->mode = BCM_PCM_MODE_I2S_16BIT_64BCLK;
     ctx->control_regs->txc  = BCM_PCM_TXC_I2S_16BIT_64BCLK;
     ctx->control_regs->cs   = BCM_PCM_CS_ENABLE | BCM_PCM_CS_TXCLR;
-    ctx->sample_rate = 44100;
+
 
     mx_nanosleep(MX_MSEC(10));
 
@@ -208,7 +234,7 @@ static mx_status_t pcm_set_stream_fmt(bcm_pcm_t* ctx, audio2_stream_cmd_set_form
 
 
     // Might make sense to split the codec init vs codec start
-    status = pcm5122_init();
+    status = hifiberry_init();
     if (status != NO_ERROR) return status;
 
     mx_handle_t ret_handle;
@@ -239,14 +265,7 @@ static mx_status_t pcm_set_stream_fmt(bcm_pcm_t* ctx, audio2_stream_cmd_set_form
 }
 
 
-static void set_pcm_clock(bcm_pcm_t* pcm_ctx) {
-    volatile uint32_t* pcmclk = &pcm_ctx->clock_regs[0x26];
-    volatile uint32_t* pcmdiv = &pcm_ctx->clock_regs[0x27];
 
-    *pcmclk = 0x5a000021;
-    *pcmdiv = 0x5a006cd4;
-    *pcmclk = 0x5a000211;
-}
 
 static mx_status_t pcm_audio_sink_release(mx_device_t* device) {
     bcm_pcm_t* ctx = dev_to_bcm_pcm(device);
@@ -317,17 +336,13 @@ static int pcm_port_thread(void *arg) {
         if (status != NO_ERROR) pcm_watch_the_world_burn(status,ctx);
 
         mx_handle_t channel = (mx_handle_t)port_out.hdr.key;
-        printf("Got port key:%lx\n",port_out.hdr.key);
-        printf("Got port type:%x\n",port_out.hdr.type);
-        printf("Got port extra:%x\n",port_out.hdr.extra);
-        printf("Got port signals:%x\n",port_out.signals);
+
         uint32_t req_size;
 
         if (channel == ctx->stream_ch) {
 
             status = mx_channel_read(channel,0,&req,sizeof(req),&req_size,NULL,0,NULL);
             if (status != NO_ERROR) pcm_watch_the_world_burn(status,ctx);
-            printf("Read %u of %lu bytes from stream channel\n",req_size,sizeof(req));
 
             switch(req.hdr.cmd) {
                 HANDLE_REQ(AUDIO2_STREAM_CMD_SET_FORMAT, set_fmt_req, pcm_set_stream_fmt);
@@ -343,9 +358,7 @@ static int pcm_port_thread(void *arg) {
                 uint32_t num_handles;
                 status = mx_channel_read(channel,0,&buff_req,sizeof(buff_req),&req_size,handles,4,&num_handles);
                 if (status != NO_ERROR) pcm_watch_the_world_burn(status,ctx);
-                printf("Read %u of %lu bytes from buffer channel\n",req_size,sizeof(req));
-                printf("    Got command 0x%04x\n",req.hdr.cmd);
-                printf("    Received %u handles\n",num_handles);
+
                 switch(buff_req.hdr.cmd) {
                     case AUDIO2_RB_CMD_SET_BUFFER:
                         pcm_set_buffer(ctx,buff_req.set_buffer_req,handles[0]);
@@ -361,15 +374,7 @@ static int pcm_port_thread(void *arg) {
                         printf("unrecognized buffer command\n");
                 }
             }
-
         }
-/*
-        printf("port.key  %lx\n",port_out.hdr.key);
-        printf("port.type  %x\n",port_out.hdr.type);
-        printf("port.signals %x\n",port_out.signals);
-*/
-    }
-
     return -1;
 }
 
@@ -501,7 +506,6 @@ static int pcm_bootstrap_thread(void *arg) {
     mx_vmo_op_range(pcm_ctx->buffer_vmo, MX_VMO_OP_CACHE_CLEAN, 0, 5000, NULL, 0);
 //***************************************************************
 #endif
-    set_pcm_clock(pcm_ctx);
 #if 0
     pcm_ctx->control_regs->cs   = BCM_PCM_CS_ENABLE | BCM_PCM_CS_TXCLR;
     pcm_ctx->control_regs->mode = BCM_PCM_MODE_I2S_16BIT_64BCLK;
