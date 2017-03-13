@@ -9,3 +9,4 @@
 mx_status_t hifiberry_init(void);
 mx_status_t hifiberry_start(void);
 mx_status_t hifiberry_stop(void);
+mx_status_t hifiberry_release(void);

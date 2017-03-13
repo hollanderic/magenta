@@ -46,6 +46,7 @@ mx_status_t hifiberry_release(void) {
 
     //close file pointer
     close(hfb->i2c_fd);
+    free(hfb);
     hfb = NULL;
 
     return NO_ERROR;
