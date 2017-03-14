@@ -65,11 +65,11 @@ static mx_status_t hifiberry_LED_ctl(uint8_t state) {
 }
 
 mx_status_t hifiberry_start(void) {
-    return hifiberry_LED_ctl(true);
+    return hifiberry_LED_ctl(1);
 }
 
 mx_status_t hifiberry_stop(void) {
-    return hifiberry_LED_ctl(false);
+    return hifiberry_LED_ctl(0);
 }
 
 mx_status_t hifiberry_init(void) {
