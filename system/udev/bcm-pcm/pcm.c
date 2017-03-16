@@ -42,10 +42,11 @@
 
 typedef union {
     audio2_cmd_hdr_t                        hdr;
-    audio2_rb_cmd_set_buffer_req_t          set_buffer_req;
+    audio2_rb_cmd_get_buffer_req_t          get_buffer_req;
     audio2_stream_cmd_set_format_req_t      set_fmt_req;
     audio2_rb_cmd_start_req_t               start_req;
     audio2_rb_cmd_stop_req_t                stop_req;
+    audio2_rb_cmd_get_fifo_depth_req_t      get_fifo_req;
 } buffer_packet_t;
 
 
@@ -162,6 +163,16 @@ static int pcm_notify_thread(void* arg) {
     }
     ctx->notify_running = false;
     return 0;
+}
+
+static mx_status_t pcm_get_fifo_depth(bcm_pcm_t* ctx, audio2_rb_cmd_get_fifo_depth_req_t req) {
+    audio2_rb_cmd_get_fifo_depth_resp_t resp;
+    resp.hdr.cmd = req.hdr.cmd;
+    resp.hdr.transaction_id = req.hdr.transaction_id;
+    resp.result = NO_ERROR;
+    resp.fifo_depth = 64;
+
+    return mx_channel_write(ctx->buffer_ch, 0, &resp, sizeof(resp), NULL, 0);
 }
 
 static mx_status_t pcm_stop(bcm_pcm_t* ctx, audio2_rb_cmd_stop_req_t req) {
@@ -283,11 +294,27 @@ static void pcm_audio_sink_unbind(mx_device_t* device) {
 }
 
 
-static mx_status_t pcm_set_buffer(bcm_pcm_t* ctx, audio2_rb_cmd_set_buffer_req_t req, mx_handle_t vmo) {
+static mx_status_t pcm_get_buffer(bcm_pcm_t* ctx, audio2_rb_cmd_get_buffer_req_t req) {
 
-    ctx->buffer_vmo = vmo;
-    ctx->buffer_size = req.ring_buffer_bytes;
-    printf("recieved %lu byte vmo\n",ctx->buffer_size);
+    audio2_rb_cmd_get_buffer_resp_t resp;
+    resp.hdr.cmd = req.hdr.cmd;
+    resp.hdr.transaction_id = req.hdr.transaction_id;
+
+    mx_status_t status;
+    ctx->buffer_size = req.min_ring_buffer_frames * ctx->audio_frame_size;
+
+    status = mx_vmo_create(ctx->buffer_size,0,&ctx->buffer_vmo);
+    if (status != NO_ERROR) return status;
+
+    status = mx_vmo_op_range(ctx->buffer_vmo, MX_VMO_OP_COMMIT, 0, ctx->buffer_size, NULL, 0);
+    if (status != NO_ERROR) goto gb_fail;
+
+    mx_handle_t ret_handle;
+    status = mx_handle_duplicate(ctx->buffer_vmo, MX_RIGHT_SAME_RIGHTS, &ret_handle);
+    if (status != NO_ERROR) goto gb_fail;
+
+
+    printf("created %lu byte vmo\n",ctx->buffer_size);
     ctx->buffer_notifications = req.notifications_per_ring;
     printf("doing %d notifications per ring loop\n",ctx->buffer_notifications);
 
@@ -299,20 +326,24 @@ static mx_status_t pcm_set_buffer(bcm_pcm_t* ctx, audio2_rb_cmd_set_buffer_req_t
 
     mx_paddr_t dest_addr     = 0x7e000000 | ( 0x00ffffff & (uint32_t)(mx_paddr_t)(&((bcm_pcm_regs_t*)I2S_BASE)->fifo));
 
-    mx_status_t status = bcm_dma_link_vmo_to_peripheral(&ctx->dma, ctx->buffer_vmo, transfer_info, dest_addr);
+    status = bcm_dma_link_vmo_to_peripheral(&ctx->dma, ctx->buffer_vmo, transfer_info, dest_addr);
     if (status != NO_ERROR) {
         printf("VMO dma linking failed\n");
-        // Keep going so we notify the client
+        goto gb_fail;
     }
-
-    audio2_rb_cmd_set_buffer_resp_t resp;
-    resp.hdr.cmd = req.hdr.cmd;
-    resp.hdr.transaction_id = req.hdr.transaction_id;
     resp.result = status;
+    status = mx_channel_write( ctx->buffer_ch, 0, &resp, sizeof(resp), &ret_handle, 1);
+    return status;
 
+gb_fail:
+    mx_handle_close(ctx->buffer_vmo);
+    ctx->buffer_vmo = MX_HANDLE_INVALID;
+    resp.result = status;
     status = mx_channel_write( ctx->buffer_ch, 0, &resp, sizeof(resp), NULL, 0);
     return status;
 }
+
+
 
 #define HANDLE_REQ(_ioctl, _payload, _handler)      \
 case _ioctl:                                        \
@@ -348,12 +379,11 @@ static int pcm_port_thread(void *arg) {
             if (status != NO_ERROR) pcm_watch_the_world_burn(status,ctx);
 
             switch(req.hdr.cmd) {
-                    HANDLE_REQ(AUDIO2_STREAM_CMD_SET_FORMAT, set_fmt_req, pcm_set_stream_fmt);
-                    HANDLE_REQ(AUDIO2_RB_CMD_START         , start_req  , pcm_start);
-                    HANDLE_REQ(AUDIO2_RB_CMD_STOP          , stop_req   , pcm_stop);
-                case AUDIO2_RB_CMD_SET_BUFFER:
-                    pcm_set_buffer(ctx,req.set_buffer_req,handles[0]);
-                    break;
+                    HANDLE_REQ(AUDIO2_STREAM_CMD_SET_FORMAT, set_fmt_req      , pcm_set_stream_fmt);
+                    HANDLE_REQ(AUDIO2_RB_CMD_START         , start_req        , pcm_start);
+                    HANDLE_REQ(AUDIO2_RB_CMD_STOP          , stop_req         , pcm_stop);
+                    HANDLE_REQ(AUDIO2_RB_CMD_GET_BUFFER    , get_buffer_req   , pcm_get_buffer);
+                    HANDLE_REQ(AUDIO2_RB_CMD_GET_FIFO_DEPTH, get_fifo_req     , pcm_get_fifo_depth);
                 case AUDIO2_RB_POSITION_NOTIFY:
                 default:
                     printf("unrecognized buffer command\n");

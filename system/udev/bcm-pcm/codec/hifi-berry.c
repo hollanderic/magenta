@@ -133,12 +133,10 @@ mx_status_t hifiberry_init(void) {
 
 bool pcm5122_is_valid_mode( audio2_stream_cmd_set_format_req_t req  ){
 
-    //Yes this is lame.  Will make it better as we add more modes.
-    if  ( (req.frames_per_second == 44100)  &&
-          (req.packing == AUDIO2_BIT_PACKING_16BIT_LE) &&
-          (req.channels == 2) ) {
-        return true;
-    }
-
-    return false;
+    uint32_t mode = req.sample_format & ( AUDIO2_SAMPLE_FORMAT_16BIT |
+                                          AUDIO2_SAMPLE_FORMAT_8BIT  |
+                                          AUDIO2_SAMPLE_FORMAT_24BIT_IN32 );
+    if (!mode) return false;
+    // need more checking here;
+    return true;
 }
