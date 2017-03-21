@@ -145,9 +145,12 @@ static int pcm_notify_thread(void* arg) {
 
     uint32_t offset=0;
     ctx->notify_running = true;
-
-    uint32_t notify_period_us = (1000000 * ctx->buffer_size) / (ctx->sample_rate * 4 * ctx->buffer_notifications);
-    printf("BCMPCM: Notification interval = %uuS\n",notify_period_us);
+    printf("buffer size = %lu\n",ctx->buffer_size);
+    printf("sample rate = %u\n",ctx->sample_rate);
+    printf("notifications = %u\n",ctx->buffer_notifications);
+    double notify_time = (1000000.0 * ctx->buffer_size) / (ctx->sample_rate * 4 * ctx->buffer_notifications);
+    uint64_t notify_period_us = (uint64_t)notify_time;//  (1000000 * ctx->buffer_size) / (ctx->sample_rate * 4 * ctx->buffer_notifications);
+    printf("BCMPCM: Notification interval = %lu  %fuS\n",notify_period_us,  notify_time);
     while (ctx->running) {
         mx_nanosleep(MX_USEC(notify_period_us));
 
@@ -158,7 +161,7 @@ static int pcm_notify_thread(void* arg) {
         audio2_rb_position_notify_t resp;
         resp.hdr.cmd = AUDIO2_RB_POSITION_NOTIFY;
         resp.ring_buffer_pos = offset;
-        printf("Notify %x -%u \n",ctx->buffer_ch,offset);
+        //printf("Notify %x -%u \n",ctx->buffer_ch,offset);
         mx_channel_write( ctx->buffer_ch, 0, &resp, sizeof(resp), NULL, 0);
     }
     ctx->notify_running = false;
@@ -237,10 +240,11 @@ static mx_status_t pcm_set_stream_fmt(bcm_pcm_t* ctx, audio2_stream_cmd_set_form
     // Clear present state to be safe
     pcm_deinit(ctx);
 
-
     //if (!pcm5122_is_valid_mode(req)) return ERR_NOT_SUPPORTED;
 
     ctx->sample_rate = req.frames_per_second;
+    ctx->num_channels = req.channels;
+    ctx->audio_frame_size = ctx->num_channels*2;
     set_pcm_clock(ctx);
 
     // This will need to change once we have new modes
@@ -315,8 +319,12 @@ static mx_status_t pcm_get_buffer(bcm_pcm_t* ctx, audio2_rb_cmd_get_buffer_req_t
 
 
     printf("created %lu byte vmo\n",ctx->buffer_size);
+    //ctx->buffer_vmo = vmo;
+    //ctx->buffer_size = req.ring_buffer_bytes;
+    //mx_vmo_get_size(ctx->buffer_vmo,&ctx->buffer_size);
+    //printf("recieved %lu byte vmo\n",ctx->buffer_size);
     ctx->buffer_notifications = req.notifications_per_ring;
-    printf("doing %d notifications per ring loop\n",ctx->buffer_notifications);
+    //printf("doing %d notifications per ring loop\n",ctx->buffer_notifications);
 
 
     uint32_t transfer_info =  BCM_DMA_DREQ_ID_PCM_TX << 16 |
@@ -328,7 +336,7 @@ static mx_status_t pcm_get_buffer(bcm_pcm_t* ctx, audio2_rb_cmd_get_buffer_req_t
 
     status = bcm_dma_link_vmo_to_peripheral(&ctx->dma, ctx->buffer_vmo, transfer_info, dest_addr);
     if (status != NO_ERROR) {
-        printf("VMO dma linking failed\n");
+        printf("VMO dma linking failed (%d)\n",status);
         goto gb_fail;
     }
     resp.result = status;
