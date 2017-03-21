@@ -3,6 +3,7 @@
 // found in the LICENSE file.
 
 #include <magenta/device/audio2.h>
+#include <magenta/device/i2c.h>
 
 #pragma once
 
@@ -36,8 +37,20 @@
 
 #define PCM5122_STATE_INITIALIZED           ( 1 << 0)
 
+#define HIFIBERRY_I2C_ADDRESS 0x4d
+
+
+static inline void pcm5122_add_slave(int fd) {
+   i2c_ioctl_add_slave_args_t add_slave_args = {
+        .chip_address_width = I2C_7BIT_ADDRESS,
+        .chip_address = HIFIBERRY_I2C_ADDRESS,
+    };
+
+    ioctl_i2c_bus_add_slave(fd, &add_slave_args);
+}
 
 static inline void pcm5122_write_reg(int fd, uint8_t address, uint8_t value) {
+    pcm5122_add_slave(fd);
     uint8_t argbuff[2] = {address, value};
     write(fd,argbuff,2);
 }
