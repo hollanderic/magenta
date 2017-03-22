@@ -6,8 +6,11 @@
 #include <fcntl.h>
 #include <math.h>
 #include <magenta/syscalls.h>
+#include <magenta/compiler.h>
+
 #include <magenta/device/audio2.h>
 #include <magenta/types.h>
+#include <stdatomic.h>
 #include <magenta/syscalls/port.h>
 #include <magenta/process.h>
 #include <magenta/threads.h>
@@ -18,6 +21,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
+
 
 const char* prog_name;
 
@@ -43,8 +47,8 @@ mx_handle_t vmo;
 uint16_t distance=0;
 
 volatile uint32_t rb_pos = 0;
-volatile double sin_pos = 0;
-volatile uint32_t current_pos = 0;
+atomic_int free_frames = ATOMIC_VAR_INIT(0);
+volatile uint32_t frames_written=0;
 double theta = 0;
 double phi = 0;
 double frequency = 120;
@@ -117,6 +121,8 @@ int audio_thread(void* arg) {
     uint32_t num_handles;
     buffer_packet_t req;
     uint32_t req_size;
+    volatile int last_pos=0;
+    int current_pos=0;
 
     while(running) {
 
@@ -148,7 +154,6 @@ int audio_thread(void* arg) {
                     if (num_handles == 1) {
                         audio_got_rb(req.get_buffer_resp,handles[0]);
                         printf("Ring buffer successfully retrieved\n");
-                        start_rb();
                     } else printf("No buffer returned!\n");
                     break;
                 case AUDIO2_RB_CMD_START:
@@ -157,6 +162,9 @@ int audio_thread(void* arg) {
                 case AUDIO2_RB_POSITION_NOTIFY:
                     //printf("%u\n",req.position_notify.ring_buffer_pos);
                     current_pos = req.position_notify.ring_buffer_pos;
+                    int delta = (BUFFERSIZE*4 + current_pos - last_pos)%(BUFFERSIZE*4);
+                    atomic_fetch_add(&free_frames,delta/4);
+                    last_pos = current_pos;
                     break;
               default:
                     printf("unrecognized command on channel\n");
@@ -229,42 +237,68 @@ int main(int argc, const char** argv) {
 
 
     int16_t val;
-    __UNUSED float sin_scale = 2.0*M_PI*frequency/48000;
+    double sin_scale = 2.0*M_PI*frequency/48000;
+    double theta = 0;
     __UNUSED volatile int16_t* samples = (int16_t*)rb_ptr;
-    __UNUSED volatile uint32_t index;
+    __UNUSED volatile uint32_t index = 0;
 
-
+    free_frames = 0;
+    frames_written = 0;
     audio2_init();
+
+    while (!rb_ptr);;
+
+    samples = (int16_t*)rb_ptr;
+
+    for (uint i = 0; i < BUFFERSIZE; i+=2) {
+        samples[i] = 2000*sin(theta);
+        samples[i+1] = 2000*sin(theta);
+        frames_written++;
+        theta+=sin_scale;
+        //rb_pos+=4;
+    }
+
+    start_rb();
 
     uint32_t start;
     uint32_t byte_count;
     //uint64_t now = 0;
 
     int32_t status;
-    sin_scale = 2.0*M_PI*frequency/48000;
+
     while (loop_count) {
 
         start = rb_pos;
         byte_count=0;
-        while ((rb_pos != current_pos) && (rb_ptr)) {
+        while (atomic_load(&free_frames)) {
 
-
-            val = 2000*sin(sin_pos);
-            ((uint32_t*)rb_ptr)[index] = (val << 16) | val;
+            val = 2000*sin(theta);
+            ((int32_t*)rb_ptr)[index] = (val << 16) | ((uint16_t)val);
             index = (index + 1) % BUFFERSIZE;
+
             rb_pos = (rb_pos + 4) % (BUFFERSIZE*4);
-            sin_pos += sin_scale;
+            theta += sin_scale;
+            //if (theta > (2*M_PI)) theta-=2*M_PI;
+
             byte_count+=4;
+            atomic_fetch_add(&free_frames,-1);
         }
-        //printf("%u  %u\n",byte_count,rb_pos);
+        theta = fmod(theta,2*M_PI);
         if (byte_count) {
+            //printf("%8u  %8u %8u\n",byte_count,start, rb_pos);
+            mx_time_t t = mx_time_get(MX_CLOCK_MONOTONIC);
             if (rb_pos > start) {
-                status = mx_vmo_op_range(vmo, MX_VMO_OP_CACHE_CLEAN,start,rb_pos - start,NULL, 0);
+                status = mx_cache_flush((void*)(rb_ptr + start), rb_pos - start,MX_CACHE_FLUSH_DATA);
+                //status = mx_vmo_op_range(vmo, MX_VMO_OP_CACHE_CLEAN,start,rb_pos - start,NULL, 0);
             } else {
-                status = mx_vmo_op_range(vmo, MX_VMO_OP_CACHE_CLEAN,start,(BUFFERSIZE*4) - start,NULL, 0);
-                status += mx_vmo_op_range(vmo, MX_VMO_OP_CACHE_CLEAN,0,rb_pos,NULL, 0);
+                status = mx_cache_flush((void*)(rb_ptr + start), (BUFFERSIZE*4) - start,MX_CACHE_FLUSH_DATA);
+                status +=mx_cache_flush((void*)rb_ptr, rb_pos,MX_CACHE_FLUSH_DATA);
+                //status = mx_vmo_op_range(vmo, MX_VMO_OP_CACHE_CLEAN,start,(BUFFERSIZE*4) - start,NULL, 0);
+                //status = mx_vmo_op_range(vmo, MX_VMO_OP_CACHE_CLEAN,0,rb_pos,NULL, 0);
             }
-            if (status!=NO_ERROR) printf("somethign wrong with the cache flush - %d\n",status);
+            // (status!=NO_ERROR) printf("somethign wrong with the cache flush - %d\n",status);
+            t = mx_time_get(MX_CLOCK_MONOTONIC) - t;
+            printf("%lu %d %lu\n",t,status,mx_ticks_per_second());
         }
     }
 
