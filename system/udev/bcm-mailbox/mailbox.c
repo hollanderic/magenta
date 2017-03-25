@@ -391,7 +391,7 @@ static mx_protocol_device_t mailbox_device_proto = {
 };
 
 static mx_protocol_device_t empty_device_proto = {};
-
+extern mx_status_t bcm_dma_init(mx_device_t* parent);
 mx_status_t mailbox_bind(mx_driver_t* driver, mx_device_t* parent, void** cookie) {
     uintptr_t page_base;
 
@@ -497,7 +497,9 @@ mx_status_t mailbox_bind(mx_driver_t* driver, mx_device_t* parent, void** cookie
     pcm_device->prop_count = 2;
     pcm_device->protocol_id = MX_PROTOCOL_SOC;
     status = device_add(pcm_device, parent);
-    return NO_ERROR;
+
+    status = bcm_dma_init(parent);
+    return status;
 }
 
 mx_driver_t _driver_bcm_mailbox = {
