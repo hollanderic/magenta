@@ -17,6 +17,14 @@
 #include <bcm/dma.h>
 #include <bcm/bcm28xx.h>
 
+#if TRACE
+#define xprintf(fmt...) printf(fmt)
+#else
+#define xprintf(fmt...) \
+    do {                \
+    } while (0)
+#endif
+
 #define BCM_DMA_PAGE_SIZE   4096
 #define BCM_DMA_NUM_CONTROL_BLOCKS   (64)
 
@@ -27,13 +35,13 @@ bool bcm_dma_is_running(bcm_dma_t* dma) {
 }
 
 static void dma_cb_test(void* arg) {
-    //printf("Got DMA callback\n");
+    //xprintf("Got DMA callback\n");
 }
 
 static int dma_irq_thread(void* arg) {
     bcm_dma_t* dma = arg;
     mx_handle_t irq_handle = dma->irq_handle;
-    printf("BCMDMA: dma interrupt thread started\n");
+    xprintf("BCMDMA: dma interrupt thread started\n");
 
     mx_status_t stat;
     bool done = false;
@@ -41,7 +49,7 @@ static int dma_irq_thread(void* arg) {
     while(!done) {
         stat = mx_interrupt_wait(irq_handle);
         if (stat != NO_ERROR) {
-            printf("dma interupt wait failed = %d\n",stat);
+            xprintf("dma interupt wait failed = %d\n",stat);
         }
         mtx_lock(&dma->irq_thrd_lock);
         done = dma->irq_thrd_stop;
@@ -56,13 +64,13 @@ static int dma_irq_thread(void* arg) {
     mtx_lock(&dma->irq_thrd_lock);
     dma->irq_thrd_stop=false;
     mtx_unlock(&dma->irq_thrd_lock);
-    printf("BCMDMA: dma interrupt thread quitting\n");
+    xprintf("BCMDMA: dma interrupt thread quitting\n");
     return 0;
 }
 
 mx_status_t bcm_dma_init(bcm_dma_t* dma, uint32_t ch) {
 
-    printf("BCMDMA: Initializing dma channel %u\n",ch);
+    xprintf("BCMDMA: Initializing dma channel %u\n",ch);
     mx_status_t status;
     mx_handle_t irq_handle = MX_HANDLE_INVALID;
 
@@ -88,11 +96,11 @@ mx_status_t bcm_dma_init(bcm_dma_t* dma, uint32_t ch) {
             goto dma_init_err;
         }
     }
-    printf("BCMDMA: Initializing control block buffers\n");
+    xprintf("BCMDMA: Initializing control block buffers\n");
     // pre-init the control block buffer
     status = io_buffer_init(&dma->ctl_blks, BCM_DMA_NUM_CONTROL_BLOCKS * sizeof(bcm_dma_cb_t), IO_BUFFER_RW);
     if (status != NO_ERROR) {
-        printf("\nBCM_DMA: Error Allocating control blocks: %d\n",status);
+        xprintf("\nBCM_DMA: Error Allocating control blocks: %d\n",status);
         mtx_unlock(&dma->dma_lock);
         return status;
     }
@@ -102,12 +110,12 @@ mx_status_t bcm_dma_init(bcm_dma_t* dma, uint32_t ch) {
     dma->ch_num = ch;
     dma->callback = dma_cb_test;
 
-    printf("BCMDMA: Initializing interrupt handler\n");
+    xprintf("BCMDMA: Initializing interrupt handler\n");
     irq_handle = mx_interrupt_create(get_root_resource(),
                                      INTERRUPT_DMA0 + ch,
                                      MX_FLAG_REMAP_IRQ);
     if (irq_handle < 0) {
-        printf("bcm-dma: failed to create interrupt handle, handle = %d\n",
+        xprintf("bcm-dma: failed to create interrupt handle, handle = %d\n",
                 irq_handle);
         status = irq_handle;  //clean up
         goto dma_init_err;
@@ -118,13 +126,13 @@ mx_status_t bcm_dma_init(bcm_dma_t* dma, uint32_t ch) {
     dma_regs->channels[dma->ch_num].cs = BCM_DMA_CS_RESET;  //reset the channel
 
     // Create a thread to handle IRQs.
-    printf("BCMDMA: Creating interrupt thread\n");
+    xprintf("BCMDMA: Creating interrupt thread\n");
     char thrd_name[20];
-    snprintf(thrd_name,sizeof(thrd_name),"dma%02u_irq_thrd",ch);
+    snxprintf(thrd_name,sizeof(thrd_name),"dma%02u_irq_thrd",ch);
     int thrd_rc = thrd_create_with_name(&dma->irq_thrd, dma_irq_thread, dma,
                                         thrd_name);
     if (thrd_rc != thrd_success) {
-        printf("BCMDMA: failed to create irq thread\n");
+        xprintf("BCMDMA: failed to create irq thread\n");
         status = thrd_status_to_mx_status(thrd_rc);
         goto dma_init_err;
     }
@@ -207,7 +215,7 @@ static mx_status_t bcm_dma_build_mem_index(bcm_dma_t* dma, mx_paddr_t* page_list
 
 mx_status_t bcm_dma_init_vmo_to_fifo_trans(bcm_dma_t* dma, mx_handle_t vmo, uint32_t t_info,
                                                            mx_paddr_t dest, uint32_t flags   ) {
-    printf("Linking vmo to fifo...\n");
+    xprintf("Linking vmo to fifo...\n");
     mtx_lock(&dma->dma_lock);
 
     if ( (dma->state & BCM_DMA_STATE_INITIALIZED) == 0) {
@@ -302,7 +310,7 @@ dma_link_ret:
 
 mx_status_t bcm_dma_start(bcm_dma_t* dma) {
 
-    printf("BCMDMA: starting dma channel %u\n",dma->ch_num);
+    xprintf("BCMDMA: starting dma channel %u\n",dma->ch_num);
     mtx_lock(&dma->dma_lock);
     if ( (dma_regs == NULL) || !(dma->state & BCM_DMA_STATE_READY)){
         mtx_unlock(&dma->dma_lock);
@@ -318,7 +326,7 @@ mx_status_t bcm_dma_start(bcm_dma_t* dma) {
 }
 
 mx_status_t bcm_dma_stop(bcm_dma_t* dma) {
-    printf("BCMDMA: Stopping dma channel %u\n",dma->ch_num);
+    xprintf("BCMDMA: Stopping dma channel %u\n",dma->ch_num);
     mtx_lock(&dma->dma_lock);
 
     if ( (dma_regs == NULL) || (dma->state == BCM_DMA_STATE_SHUTDOWN)){
@@ -334,7 +342,7 @@ mx_status_t bcm_dma_stop(bcm_dma_t* dma) {
 }
 
 mx_status_t bcm_dma_deinit(bcm_dma_t* dma) {
-    printf("BCMDMA: Deiniting dma channel %u\n",dma->ch_num);
+    xprintf("BCMDMA: Deiniting dma channel %u\n",dma->ch_num);
 
     //Halt any activity (if there is any)
     //bcm_dma_stop(dma);
@@ -342,12 +350,12 @@ mx_status_t bcm_dma_deinit(bcm_dma_t* dma) {
     mtx_lock(&dma->dma_lock);
 
     //shut down the irq thread
-    printf("BCMDMA: Shutting down irq thread\n");
+    xprintf("BCMDMA: Shutting down irq thread\n");
     mtx_lock(&dma->irq_thrd_lock);
     dma->irq_thrd_stop = true;
     mtx_unlock(&dma->irq_thrd_lock);
     thrd_join(dma->irq_thrd, NULL);
-    printf("BCMDMA: irq thread shut down\n");
+    xprintf("BCMDMA: irq thread shut down\n");
 
     dma_regs->channels[dma->ch_num].cs &= ~BCM_DMA_CS_ACTIVE;
 
