@@ -6,6 +6,10 @@
 
 #pragma once
 
+#define BCM_DMA_FLAGS_USE_MEM_INDEX (uint32_t)( 1 << 0)
+#define BCM_DMA_FLAGS_CIRCULAR      (uint32_t)( 1 << 1)
+
+
 #define BCM_DMA_DREQ_ID_NONE        (0)
 #define BCM_DMA_DREQ_ID_DSI         (1)
 #define BCM_DMA_DREQ_ID_PCM_TX      (2)
@@ -13,13 +17,14 @@
 
 
 #define BCM_DMA_CS_ACTIVE           (uint32_t)( 1 << 0 )
-#define BCM_DMA_CS_RESET            (uint32_t)( 1 << 31)
+#define BCM_DMA_CS_INT              (uint32_t)( 1 << 2 )
 #define BCM_DMA_CS_WAIT             (uint32_t)( 1 << 28)
-
+#define BCM_DMA_CS_RESET            (uint32_t)( 1 << 31)
 
 #define BCM_DMA_TI_SRC_INC          (uint32_t)( 1 << 8 )
 #define BCM_DMA_TI_DEST_DREQ        (uint32_t)( 1 << 6 )
 #define BCM_DMA_TI_WAIT_RESP        (uint32_t)( 1 << 3 )
+#define BCM_DMA_TI_INTEN            (uint32_t)( 1 << 0 )
 
 
 typedef volatile struct {
@@ -76,28 +81,42 @@ typedef struct {
     uint32_t    len;
 } bcm_dma_vmo_index_t;
 
+typedef void (*dma_cb_t)(void* arg);
 
-typedef struct {
+typedef struct bcm_dma {
 
     uint32_t                ch_num;
     io_buffer_t             ctl_blks;
     uint64_t                ctl_blk_mask;
     uint32_t                state;
-    mtx_t                   mutex;
-    bcm_dma_vmo_index_t*    vmo_idx;
-    uint32_t                vmo_idx_len;
+    mtx_t                   dma_lock;
+    bcm_dma_vmo_index_t*    mem_idx;
+    uint32_t                mem_idx_len;
+    dma_cb_t                callback;
+    mx_handle_t             irq_handle;
+    thrd_t                  irq_thrd;
+    volatile bool           irq_thrd_stop;
+    mtx_t                   irq_thrd_lock;
 
 } bcm_dma_t;
 
 
-
-mx_status_t bcm_dma_get_ctl_blk(bcm_dma_t* dma, bcm_dma_cb_t* cb, mx_paddr_t* pa);
 bool bcm_dma_isrunning(bcm_dma_t* dma);
 mx_status_t bcm_dma_start(bcm_dma_t* dma);
 mx_status_t bcm_dma_stop(bcm_dma_t* dma);
 mx_status_t bcm_dma_init(bcm_dma_t* dma, uint32_t ch);
-mx_status_t bcm_dma_release(bcm_dma_t* dma);
-mx_status_t bcm_dma_link_vmo_to_peripheral(bcm_dma_t* dma, mx_handle_t vmo, uint32_t t_info, mx_paddr_t dest);
+
+/* Initialize a vmo->fifo transaction.  This assumes that the destination address
+    is a non-incrementing physical address.
+
+        vmo - the vmo containing the source data.
+        t_info - transaction info (see BCM2835Datasheet.pdf)
+        dest - physical address of destination.  This is most likely a peripheral fifo
+            and if this is the case then t_info should be configured appropriately.
+*/
+mx_status_t bcm_dma_init_vmo_to_fifo_trans(bcm_dma_t* dma, mx_handle_t vmo, uint32_t t_info,
+                                                           mx_paddr_t dest, uint32_t flags);
 mx_status_t bcm_dma_deinit(bcm_dma_t* dma);
+
 mx_status_t bcm_dma_paddr_to_offset(bcm_dma_t* dma, mx_paddr_t paddr, uint32_t* offset);
 mx_paddr_t bcm_dma_get_position(bcm_dma_t* dma);

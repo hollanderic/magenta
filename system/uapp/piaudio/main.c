@@ -228,9 +228,9 @@ teardown:
 }
 
 int main(int argc, const char** argv) {
-    if (argc < 2)
+    if (argc < 3)
         return 1;
-    uint32_t loop_count = 10;
+    mx_time_t loop_count = MX_SEC(strtol(argv[2],NULL,10));
     frequency = strtol(argv[1],NULL,10);
     //uint32_t span = strtol(argv[2],NULL,10);
     prog_name = argv[0];
@@ -265,8 +265,9 @@ int main(int argc, const char** argv) {
     //uint64_t now = 0;
 
     int32_t status;
+    mx_time_t t = mx_time_get(MX_CLOCK_MONOTONIC);
 
-    while (loop_count) {
+    while (mx_time_get(MX_CLOCK_MONOTONIC) < (t+loop_count)) {
 
         start = rb_pos;
         byte_count=0;
@@ -286,7 +287,7 @@ int main(int argc, const char** argv) {
         theta = fmod(theta,2*M_PI);
         if (byte_count) {
             //printf("%8u  %8u %8u\n",byte_count,start, rb_pos);
-            mx_time_t t = mx_time_get(MX_CLOCK_MONOTONIC);
+
             if (rb_pos > start) {
                 status = mx_cache_flush((void*)(rb_ptr + start), rb_pos - start,MX_CACHE_FLUSH_DATA);
                 //status = mx_vmo_op_range(vmo, MX_VMO_OP_CACHE_CLEAN,start,rb_pos - start,NULL, 0);
@@ -297,8 +298,7 @@ int main(int argc, const char** argv) {
                 //status = mx_vmo_op_range(vmo, MX_VMO_OP_CACHE_CLEAN,0,rb_pos,NULL, 0);
             }
             // (status!=NO_ERROR) printf("somethign wrong with the cache flush - %d\n",status);
-            t = mx_time_get(MX_CLOCK_MONOTONIC) - t;
-            printf("%lu %d %lu\n",t,status,mx_ticks_per_second());
+            //printf("%lu %d %lu\n",t,status,mx_ticks_per_second());
         }
     }
 

@@ -112,9 +112,8 @@ static void set_pcm_clock(bcm_pcm_t* pcm_ctx) {
 static void pcm_deinit(bcm_pcm_t* ctx) {
 
     if (ctx->dma.state != BCM_DMA_STATE_SHUTDOWN) {
-        printf("Deiniting DMA...");
+        printf("Deiniting DMA...\n");
         bcm_dma_deinit(&ctx->dma);
-        printf("done\n");
     }
 
         // Turn off TX/RX, Clear FIFOs, Clear Errors
@@ -334,7 +333,9 @@ static mx_status_t pcm_get_buffer(bcm_pcm_t* ctx, audio2_rb_cmd_get_buffer_req_t
 
     mx_paddr_t dest_addr     = 0x7e000000 | ( 0x00ffffff & (uint32_t)(mx_paddr_t)(&((bcm_pcm_regs_t*)I2S_BASE)->fifo));
 
-    status = bcm_dma_link_vmo_to_peripheral(&ctx->dma, ctx->buffer_vmo, transfer_info, dest_addr);
+    status = bcm_dma_init_vmo_to_fifo_trans(&ctx->dma, ctx->buffer_vmo, transfer_info, dest_addr,
+                                                                BCM_DMA_FLAGS_USE_MEM_INDEX |
+                                                                BCM_DMA_FLAGS_CIRCULAR);
     if (status != NO_ERROR) {
         printf("VMO dma linking failed (%d)\n",status);
         goto gb_fail;
@@ -413,7 +414,7 @@ static int pcm_port_thread(void *arg) {
             }
         }
     }
-    printf("Tearing down this shitshow...");
+    printf("Tearing down this shitshow...\n");
     hifiberry_release();
     mx_handle_close(ctx->pcm_port);
     ctx->pcm_port = MX_HANDLE_INVALID;
