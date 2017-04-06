@@ -21,6 +21,12 @@ typedef volatile struct {
 
 } bcm_pcm_regs_t;
 
+#define BCM_PCM_STATE_SHUTDOWN          (uint32_t)(0)
+#define BCM_PCM_STATE_CLIENT_ACTIVE     (uint32_t)( 1 << 0 )
+#define BCM_PCM_STATE_RB_ACTIVE         (uint32_t)( 1 << 1 )
+#define BCM_PCM_STATE_RUNNING           (uint32_t)( 1 << 2 )
+#define BCM_PCM_STATE_SHUTTING_DOWN     (uint32_t)( 1 << 3 )
+
 #define BCM_PCM_MODE_INITIAL_STATE      (uint32_t)(0)
 #define BCM_PCM_TXC_INITIAL_STATE       (uint32_t)(0)
 #define BCM_PCM_RXC_INITIAL_STATE       (uint32_t)(0)

@@ -17,7 +17,9 @@
 #include <bcm/dma.h>
 #include <bcm/bcm28xx.h>
 
-#if TRACE
+
+
+#if 1
 #define xprintf(fmt...) printf(fmt)
 #else
 #define xprintf(fmt...) \

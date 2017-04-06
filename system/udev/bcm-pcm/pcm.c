@@ -72,6 +72,7 @@ typedef struct {
 
     mx_handle_t             stream_ch;
     mx_handle_t             buffer_ch;
+    mx_handle_t             buffer_ch_owner;
     mx_handle_t             pcm_port;
 
     mx_handle_t             buffer_vmo;
@@ -79,24 +80,25 @@ typedef struct {
     uint32_t                buffer_notifications;
 
     thrd_t                  notify_thrd;
+    thrd_t                  port_thrd;
     volatile bool           notify_running;
+    volatile bool           port_running;
 
-    mtx_t buffer_mutex;
-    mtx_t mutex;
+    mtx_t                   pcm_lock;
 
-    volatile bool running;
-    bool dead;
+    volatile uint32_t       state;
 
-    uint32_t* sample_rates;
-    int sample_rate_count;
+    uint32_t*               sample_rates;
+    int                     sample_rate_count;
 
-    uint32_t sample_rate;
-    int num_channels;
-    int audio_frame_size; // size of an audio frame
+    uint32_t                sample_rate;
+    int                     num_channels;
+    int                     audio_frame_size; // size of an audio frame
 
 } bcm_pcm_t;
 
 static mx_status_t pcm_dma_init(bcm_pcm_t* ctx);
+static mx_status_t pcm_deinit_buffer_locked(bcm_pcm_t* ctx);
 
 #define dev_to_bcm_pcm(dev) containerof(dev, bcm_pcm_t, device)
 
@@ -120,30 +122,24 @@ static void set_pcm_clock(bcm_pcm_t* pcm_ctx) {
 
 static void pcm_deinit(bcm_pcm_t* ctx) {
 
-    if (ctx->dma.state != BCM_DMA_STATE_SHUTDOWN) {
-        xprintf("Deiniting DMA...\n");
-        bcm_dma_deinit(&ctx->dma);
+    mtx_lock(&ctx->pcm_lock);
+
+    xprintf("deiniting buffer\n");
+    pcm_deinit_buffer_locked(ctx);
+
+    xprintf("closing stream\n");
+    if (ctx->stream_ch != MX_HANDLE_INVALID) {
+        mx_handle_close(ctx->stream_ch);
+        ctx->stream_ch = MX_HANDLE_INVALID;
     }
+    xprintf("closing port\n");
+    mx_handle_close(ctx->pcm_port);
+    ctx->pcm_port = MX_HANDLE_INVALID;
 
-        // Turn off TX/RX, Clear FIFOs, Clear Errors
-    ctx->control_regs->cs           = BCM_PCM_CS_ENABLE | BCM_PCM_CS_TXCLR | BCM_PCM_CS_RXCLR ;
+    ctx->state = BCM_PCM_STATE_SHUTDOWN;
 
-    ctx->control_regs->mode         = BCM_PCM_MODE_INITIAL_STATE;
-    ctx->control_regs->txc          = BCM_PCM_TXC_INITIAL_STATE;
-    ctx->control_regs->rxc          = BCM_PCM_RXC_INITIAL_STATE;
-    ctx->control_regs->dreq_lvl     = BCM_PCM_DREQ_LVL_INITIAL_STATE;
-    ctx->control_regs->cs           = BCM_PCM_CS_INITIAL_STATE;
-
-    if (ctx->buffer_vmo != MX_HANDLE_INVALID) {
-        xprintf("closing buffer VMO\n");
-        mx_handle_close(ctx->buffer_vmo);
-        ctx->buffer_vmo = MX_HANDLE_INVALID;
-    }
-
-    hifiberry_release();
-
-    ctx->running = false;
-
+    mtx_unlock(&ctx->pcm_lock);
+    xprintf("done with deinit\n");
 }
 
 static int pcm_notify_thread(void* arg) {
@@ -153,6 +149,8 @@ static int pcm_notify_thread(void* arg) {
     uint32_t offset=0;
     ctx->notify_running = true;
 
+    mx_status_t status = NO_ERROR;
+
     double notify_time = (1000000.0 * ctx->buffer_size) / (ctx->sample_rate * 4 * ctx->buffer_notifications);
     uint64_t notify_period_us = (uint64_t)notify_time;//  (1000000 * ctx->buffer_size) / (ctx->sample_rate * 4 * ctx->buffer_notifications);
 
@@ -161,9 +159,8 @@ static int pcm_notify_thread(void* arg) {
     xprintf("sample rate = %u\n",ctx->sample_rate);
     xprintf("notifications = %u\n",ctx->buffer_notifications);
 
-    while (ctx->running) {
+    while ((ctx->state & BCM_PCM_STATE_RUNNING) && !(ctx->state & BCM_PCM_STATE_SHUTTING_DOWN) ) {
         mx_nanosleep(MX_USEC(notify_period_us));
-
 
         mx_paddr_t pos = bcm_dma_get_position(&ctx->dma);
         bcm_dma_paddr_to_offset(&ctx->dma,pos,&offset);
@@ -171,9 +168,11 @@ static int pcm_notify_thread(void* arg) {
         audio2_rb_position_notify_t resp;
         resp.hdr.cmd = AUDIO2_RB_POSITION_NOTIFY;
         resp.ring_buffer_pos = offset;
-        //printf("Notify %x -%u \n",ctx->buffer_ch,offset);
-        mx_channel_write( ctx->buffer_ch, 0, &resp, sizeof(resp), NULL, 0);
+
+        status = mx_channel_write( ctx->buffer_ch, 0, &resp, sizeof(resp), NULL, 0);
+        if (status != NO_ERROR) break;
     }
+    xprintf("notification thread shutting down\n");
     ctx->notify_running = false;
     return 0;
 }
@@ -191,62 +190,125 @@ static mx_status_t pcm_get_fifo_depth(bcm_pcm_t* ctx, audio2_rb_cmd_get_fifo_dep
 static mx_status_t pcm_stop(bcm_pcm_t* ctx, audio2_rb_cmd_stop_req_t req) {
 
     mx_status_t res;
+    mtx_lock(&ctx->pcm_lock);
 
-    if (!ctx->running) {
+    if (!(ctx->state & BCM_PCM_STATE_RUNNING)) {
         res = ERR_BAD_STATE;
     } else {
+        ctx->state &= ~BCM_PCM_STATE_RUNNING;
+        if (ctx->notify_running) {
+            thrd_join(ctx->notify_thrd,NULL);
+        }
         hifiberry_stop();
         bcm_dma_stop(&ctx->dma);
+
         res = NO_ERROR;
     }
 
     audio2_rb_cmd_stop_resp_t resp;
-
     resp.result = res;
     resp.hdr.transaction_id = req.hdr.transaction_id;
     resp.hdr.cmd = req.hdr.cmd;
 
-    return mx_channel_write( ctx->buffer_ch, 0, &resp, sizeof(resp), NULL, 0);
-
+    res = mx_channel_write( ctx->buffer_ch, 0, &resp, sizeof(resp), NULL, 0);
+    mtx_unlock(&ctx->pcm_lock);
+    return res;
 }
 
 static mx_status_t pcm_start(bcm_pcm_t* ctx, audio2_rb_cmd_start_req_t req) {
 
     audio2_rb_cmd_start_resp_t resp;
-    //Stuff below should actually be in the start handler
+    mx_status_t status = NO_ERROR;
+
+    mtx_lock(&ctx->pcm_lock);
+
+    if (ctx->state & BCM_PCM_STATE_RUNNING) {
+        status = ERR_BAD_STATE;
+        goto pcm_start_out;
+    }
+
     ctx->control_regs->cs   = BCM_PCM_CS_ENABLE | BCM_PCM_CS_DMAEN | (0x03 << 15);
     bcm_dma_start(&ctx->dma);
     // turn on i2s transmitter
     ctx->control_regs->cs   = BCM_PCM_CS_ENABLE | BCM_PCM_CS_DMAEN | BCM_PCM_CS_TXON;
     //i2s is running at this point
     resp.start_ticks = mx_ticks_get();
-    ctx->running = true;
+    ctx->state |= BCM_PCM_STATE_RUNNING;
+
     hifiberry_start();
 
     int thrd_rc = thrd_create_with_name(&ctx->notify_thrd,
                                         pcm_notify_thread, ctx,
                                         "pcm_notify_thread");
+
     if (thrd_rc != thrd_success) {
-        pcm_deinit(ctx);
-        return thrd_status_to_mx_status(thrd_rc);
+        status = thrd_status_to_mx_status(thrd_rc);
     }
 
-    resp.result = NO_ERROR;
+pcm_start_out:
+    resp.result = status;
     resp.hdr.transaction_id = req.hdr.transaction_id;
     resp.hdr.cmd = req.hdr.cmd;
 
-    return mx_channel_write( ctx->buffer_ch, 0, &resp, sizeof(resp), NULL, 0);
+    status =  mx_channel_write( ctx->buffer_ch, 0, &resp, sizeof(resp), NULL, 0);
+    mtx_unlock(&ctx->pcm_lock);
+    return status;
 
 }
 
 
+static mx_status_t pcm_deinit_buffer_locked(bcm_pcm_t* ctx) {
+
+    ctx->state |= BCM_PCM_STATE_SHUTTING_DOWN;
+
+    hifiberry_release();
+
+    //NOTE: Always shut down the dma before stopping the pcm
+    if (ctx->dma.state != BCM_DMA_STATE_SHUTDOWN) {
+        xprintf("Deiniting DMA...\n");
+        bcm_dma_deinit(&ctx->dma);
+    }
+
+    // Turn off PCM TX/RX, Clear FIFOs, Clear Errors
+    ctx->control_regs->cs           = BCM_PCM_CS_ENABLE | BCM_PCM_CS_TXCLR | BCM_PCM_CS_RXCLR ;
+
+    ctx->control_regs->mode         = BCM_PCM_MODE_INITIAL_STATE;
+    ctx->control_regs->txc          = BCM_PCM_TXC_INITIAL_STATE;
+    ctx->control_regs->rxc          = BCM_PCM_RXC_INITIAL_STATE;
+    ctx->control_regs->dreq_lvl     = BCM_PCM_DREQ_LVL_INITIAL_STATE;
+    ctx->control_regs->cs           = BCM_PCM_CS_INITIAL_STATE;
+
+    if (ctx->notify_running) {
+        xprintf("waiting on notify thread shutdown\n");
+        thrd_join(ctx->notify_thrd,NULL);
+    }
+
+    if (ctx->buffer_ch != MX_HANDLE_INVALID) {
+        mx_handle_close(ctx->buffer_ch);
+        ctx->buffer_ch = MX_HANDLE_INVALID;
+        ctx->buffer_ch_owner = MX_HANDLE_INVALID;
+    }
+
+    if (ctx->buffer_vmo != MX_HANDLE_INVALID) {
+        mx_handle_close(ctx->buffer_vmo);
+        ctx->buffer_vmo = MX_HANDLE_INVALID;
+    }
+
+    ctx->state &= ~BCM_PCM_STATE_SHUTTING_DOWN;
+
+    return NO_ERROR;
+}
 
 static mx_status_t pcm_set_stream_fmt(bcm_pcm_t* ctx, audio2_stream_cmd_set_format_req_t req) {
     mx_status_t status;
     audio2_stream_cmd_set_format_resp_t resp;
+    mx_handle_t ret_handle = MX_HANDLE_INVALID;
 
-    // Clear present state to be safe
-    pcm_deinit(ctx);
+    mtx_lock(&ctx->pcm_lock);
+
+    if (ctx->buffer_ch != MX_HANDLE_INVALID) {
+        pcm_deinit_buffer_locked(ctx);
+    }
 
     //if (!pcm5122_is_valid_mode(req)) return ERR_NOT_SUPPORTED;
 
@@ -270,7 +332,6 @@ static mx_status_t pcm_set_stream_fmt(bcm_pcm_t* ctx, audio2_stream_cmd_set_form
     status = hifiberry_init();
     if (status != NO_ERROR) goto set_stream_fail;
 
-    mx_handle_t ret_handle;
     status = mx_channel_create(0, &ctx->buffer_ch, &ret_handle);
     if (status != NO_ERROR) goto set_stream_fail;
 
@@ -279,7 +340,7 @@ static mx_status_t pcm_set_stream_fmt(bcm_pcm_t* ctx, audio2_stream_cmd_set_form
 
 set_stream_fail:
     xprintf("set stream FAIL\n");
-    pcm_deinit(ctx);
+    pcm_deinit_buffer_locked(ctx);
 
 set_stream_done:
     resp.hdr.transaction_id = req.hdr.transaction_id;
@@ -287,6 +348,7 @@ set_stream_done:
     resp.result = status;
 
     status = mx_channel_write( ctx->stream_ch, 0, &resp, sizeof(resp), &ret_handle, 1 );
+    mtx_unlock(&ctx->pcm_lock);
     return status;
 }
 
@@ -299,7 +361,6 @@ static mx_status_t pcm_audio_sink_release(mx_device_t* device) {
 static void pcm_audio_sink_unbind(mx_device_t* device) {
 
     bcm_pcm_t* ctx = dev_to_bcm_pcm(device);
-    ctx->dead = true;
     //update_signals(ctx);
     //completion_signal(&ctx->free_write_completion);
     device_remove(&ctx->device);
@@ -376,6 +437,7 @@ case _ioctl:                                        \
 static int pcm_port_thread(void *arg) {
 
     bcm_pcm_t* ctx = arg;
+    ctx->port_running = true;
     mx_status_t status;
 
     mx_io_packet_t port_out;
@@ -384,7 +446,7 @@ static int pcm_port_thread(void *arg) {
 
     while ( (ctx->stream_ch != MX_HANDLE_INVALID) || (ctx->buffer_ch != MX_HANDLE_INVALID)) {
         status = mx_port_wait(ctx->pcm_port, MX_TIME_INFINITE, &port_out, sizeof(port_out));
-        if (status != NO_ERROR) pcm_watch_the_world_burn(status,ctx);
+        if (status != NO_ERROR) break;
 
         mx_handle_t channel = (mx_handle_t)port_out.hdr.key;
 
@@ -394,41 +456,44 @@ static int pcm_port_thread(void *arg) {
             mx_handle_t handles[4];
             uint32_t num_handles;
             status = mx_channel_read(channel,0,&req,sizeof(req),&req_size,handles,4,&num_handles);
-            if (status != NO_ERROR) pcm_watch_the_world_burn(status,ctx);
+            if (status != NO_ERROR) break;
 
-            switch(req.hdr.cmd) {
-                    HANDLE_REQ(AUDIO2_STREAM_CMD_SET_FORMAT, set_fmt_req      , pcm_set_stream_fmt);
-                    HANDLE_REQ(AUDIO2_RB_CMD_START         , start_req        , pcm_start);
-                    HANDLE_REQ(AUDIO2_RB_CMD_STOP          , stop_req         , pcm_stop);
-                    HANDLE_REQ(AUDIO2_RB_CMD_GET_BUFFER    , get_buffer_req   , pcm_get_buffer);
-                    HANDLE_REQ(AUDIO2_RB_CMD_GET_FIFO_DEPTH, get_fifo_req     , pcm_get_fifo_depth);
-                case AUDIO2_RB_POSITION_NOTIFY:
-                default:
-                    xprintf("unrecognized buffer command\n");
+            if (channel == ctx->stream_ch) {
+                switch(req.hdr.cmd) {
+                        HANDLE_REQ(AUDIO2_STREAM_CMD_SET_FORMAT, set_fmt_req      , pcm_set_stream_fmt);
+                    default:
+                        xprintf("unrecognized stream command\n");
+                }
+            } else if (channel == ctx->buffer_ch) {
+                switch(req.hdr.cmd) {
+                        HANDLE_REQ(AUDIO2_RB_CMD_START         , start_req        , pcm_start);
+                        HANDLE_REQ(AUDIO2_RB_CMD_STOP          , stop_req         , pcm_stop);
+                        HANDLE_REQ(AUDIO2_RB_CMD_GET_BUFFER    , get_buffer_req   , pcm_get_buffer);
+                        HANDLE_REQ(AUDIO2_RB_CMD_GET_FIFO_DEPTH, get_fifo_req     , pcm_get_fifo_depth);
+                    case AUDIO2_RB_POSITION_NOTIFY:
+                    default:
+                        xprintf("unrecognized buffer command\n");
+                }
             }
         } else if (port_out.signals ==  MX_CHANNEL_PEER_CLOSED) {
-            xprintf("Closing channel %x\n",channel);
-
             if (channel == ctx->stream_ch){
+                xprintf("stream channel closed by peer\n");
                 mx_handle_close(channel);
                 ctx->stream_ch = MX_HANDLE_INVALID;
             }
             if (channel == ctx->buffer_ch) {
-                ctx->running = false;
-                xprintf("waiting on notify thread...");
-                while (ctx->notify_running);;
-                xprintf("done\n");
-                mx_handle_close(channel);
-                ctx->buffer_ch = MX_HANDLE_INVALID;
+                xprintf("buffer channel closed by peer\n");
+                break;  //need to tear the pcm session down
             }
         }
     }
-    xprintf("Tearing down this shitshow...\n");
-    hifiberry_release();
-    mx_handle_close(ctx->pcm_port);
-    ctx->pcm_port = MX_HANDLE_INVALID;
+    xprintf("tearing down...\n");
+
     pcm_deinit(ctx);
+
     xprintf("done\n");
+
+    ctx->port_running = false;
     return 0;
 }
 
@@ -437,49 +502,59 @@ static ssize_t pcm_audio2_sink_ioctl(mx_device_t* device, uint32_t op,
                           void* out_buf, size_t out_len) {
 
     bcm_pcm_t* ctx = dev_to_bcm_pcm(device);
+    mtx_lock(&ctx->pcm_lock);
+
+    mx_status_t status = NO_ERROR;
     mx_handle_t* reply = out_buf;
 
-    if (op != AUDIO2_IOCTL_GET_CHANNEL) return ERR_INVALID_ARGS;
+    if (op != AUDIO2_IOCTL_GET_CHANNEL) {
+        status = ERR_INVALID_ARGS;
+        goto pcm_ioctl_end;
+    }
 
-    if (ctx->stream_ch != MX_HANDLE_INVALID) return ERR_BAD_STATE;
+    if (ctx->state != BCM_PCM_STATE_SHUTDOWN){
+        status = ERR_BAD_STATE;
+        goto pcm_ioctl_end;
+    }
 
     mx_handle_t ret_handle;
-    mx_status_t status = mx_channel_create(0, &ctx->stream_ch, &ret_handle);
-    if (status != NO_ERROR) return ERR_INTERNAL;
-    *reply = ret_handle;
-
-    if (ctx->pcm_port != MX_HANDLE_INVALID) {
-        mx_handle_close(ctx->pcm_port);
+    status = mx_channel_create(0, &ctx->stream_ch, &ret_handle);
+    if (status != NO_ERROR){
+        status = ERR_INTERNAL;
+        goto pcm_ioctl_end;
     }
+    *reply = ret_handle;
 
     status = mx_port_create(0,&ctx->pcm_port);
     if (status != NO_ERROR) {
-        printf("error creating port\n");
+        xprintf("error creating port\n");
         mx_handle_close(ctx->stream_ch);
-        return status;
+        goto pcm_ioctl_end;
     }
 
     status = mx_port_bind( ctx->pcm_port, (uint64_t)ctx->stream_ch, ctx->stream_ch, MX_CHANNEL_READABLE | MX_CHANNEL_PEER_CLOSED);
 
     if (status != NO_ERROR) {
-        printf("error binding port to stream_ch\n");
+        xprintf("error binding port to stream_ch\n");
         mx_handle_close(ctx->stream_ch);
         mx_handle_close(ctx->pcm_port);
-        return status;
+        goto pcm_ioctl_end;
     }
 
-    thrd_t port_thrd;
-    int thrd_rc = thrd_create_with_name(&port_thrd,
+    int thrd_rc = thrd_create_with_name(&ctx->port_thrd,
                                         pcm_port_thread, ctx,
                                         "pcm_port_thread");
     if (thrd_rc != thrd_success) {
         mx_handle_close(ctx->stream_ch);
         mx_handle_close(ctx->pcm_port);
-        return thrd_status_to_mx_status(thrd_rc);
+        status = thrd_status_to_mx_status(thrd_rc);
+        goto pcm_ioctl_end;
     }
-    thrd_detach(port_thrd);
+    ctx->state |= BCM_PCM_STATE_CLIENT_ACTIVE;
 
-    return NO_ERROR;
+pcm_ioctl_end:
+    mtx_unlock(&ctx->pcm_lock);
+    return status;
 }
 
 static mx_status_t pcm_dma_init(bcm_pcm_t* ctx) {
