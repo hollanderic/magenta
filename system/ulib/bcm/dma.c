@@ -128,7 +128,7 @@ mx_status_t bcm_dma_init(bcm_dma_t* dma, uint32_t ch) {
     // Create a thread to handle IRQs.
     xprintf("BCMDMA: Creating interrupt thread\n");
     char thrd_name[20];
-    snxprintf(thrd_name,sizeof(thrd_name),"dma%02u_irq_thrd",ch);
+    snprintf(thrd_name,sizeof(thrd_name),"dma%02u_irq_thrd",ch);
     int thrd_rc = thrd_create_with_name(&dma->irq_thrd, dma_irq_thread, dma,
                                         thrd_name);
     if (thrd_rc != thrd_success) {

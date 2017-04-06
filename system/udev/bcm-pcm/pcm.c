@@ -26,6 +26,15 @@
 
 #include "pcm.h"
 #include "codec/hifi-berry.h"
+#define TRACE 1
+
+#if TRACE
+#define xprintf(fmt...) printf("BCMPCM: "fmt)
+#else
+#define xprintf(fmt...) \
+    do {                \
+    } while (0)
+#endif
 
 #define BCM_FIFO_DEADLINE_MS 100
 
@@ -69,12 +78,14 @@ typedef struct {
     size_t                  buffer_size;        // size of buffer in bytes
     uint32_t                buffer_notifications;
 
+    thrd_t                  notify_thrd;
+    volatile bool           notify_running;
+
     mtx_t buffer_mutex;
     mtx_t mutex;
 
     volatile bool running;
     bool dead;
-    volatile bool notify_running;
 
     uint32_t* sample_rates;
     int sample_rate_count;
@@ -101,8 +112,6 @@ static void set_pcm_clock(bcm_pcm_t* pcm_ctx) {
 //Set the divider as a 4.12 number
 
     uint64_t divider = ((uint64_t)BCM_PCM_REF_FREQUENCY*4096)/(pcm_ctx->sample_rate * BCM_PCM_BCLK_PER_FRAME);
-    uint32_t denom = (pcm_ctx->sample_rate * BCM_PCM_BCLK_PER_FRAME);
-    printf("BCMPCM: using %lx as divider value %x\n",divider,denom);
 
     *pcmclk = 0x5a000021;
     *pcmdiv = 0x5a000000 | (uint32_t)divider;
@@ -112,7 +121,7 @@ static void set_pcm_clock(bcm_pcm_t* pcm_ctx) {
 static void pcm_deinit(bcm_pcm_t* ctx) {
 
     if (ctx->dma.state != BCM_DMA_STATE_SHUTDOWN) {
-        printf("Deiniting DMA...\n");
+        xprintf("Deiniting DMA...\n");
         bcm_dma_deinit(&ctx->dma);
     }
 
@@ -126,10 +135,9 @@ static void pcm_deinit(bcm_pcm_t* ctx) {
     ctx->control_regs->cs           = BCM_PCM_CS_INITIAL_STATE;
 
     if (ctx->buffer_vmo != MX_HANDLE_INVALID) {
-        printf("closing buffer VMO...");
+        xprintf("closing buffer VMO\n");
         mx_handle_close(ctx->buffer_vmo);
         ctx->buffer_vmo = MX_HANDLE_INVALID;
-        printf("done\n");
     }
 
     hifiberry_release();
@@ -144,12 +152,15 @@ static int pcm_notify_thread(void* arg) {
 
     uint32_t offset=0;
     ctx->notify_running = true;
-    printf("buffer size = %lu\n",ctx->buffer_size);
-    printf("sample rate = %u\n",ctx->sample_rate);
-    printf("notifications = %u\n",ctx->buffer_notifications);
+
     double notify_time = (1000000.0 * ctx->buffer_size) / (ctx->sample_rate * 4 * ctx->buffer_notifications);
     uint64_t notify_period_us = (uint64_t)notify_time;//  (1000000 * ctx->buffer_size) / (ctx->sample_rate * 4 * ctx->buffer_notifications);
-    printf("BCMPCM: Notification interval = %lu  %fuS\n",notify_period_us,  notify_time);
+
+    xprintf("notification interval = %lu  %fuS\n",notify_period_us,  notify_time);
+    xprintf("buffer size = %lu\n",ctx->buffer_size);
+    xprintf("sample rate = %u\n",ctx->sample_rate);
+    xprintf("notifications = %u\n",ctx->buffer_notifications);
+
     while (ctx->running) {
         mx_nanosleep(MX_USEC(notify_period_us));
 
@@ -212,15 +223,13 @@ static mx_status_t pcm_start(bcm_pcm_t* ctx, audio2_rb_cmd_start_req_t req) {
     ctx->running = true;
     hifiberry_start();
 
-    thrd_t notify_thrd;
-    int thrd_rc = thrd_create_with_name(&notify_thrd,
+    int thrd_rc = thrd_create_with_name(&ctx->notify_thrd,
                                         pcm_notify_thread, ctx,
                                         "pcm_notify_thread");
     if (thrd_rc != thrd_success) {
         pcm_deinit(ctx);
         return thrd_status_to_mx_status(thrd_rc);
     }
-    thrd_detach(notify_thrd);
 
     resp.result = NO_ERROR;
     resp.hdr.transaction_id = req.hdr.transaction_id;
@@ -269,7 +278,7 @@ static mx_status_t pcm_set_stream_fmt(bcm_pcm_t* ctx, audio2_stream_cmd_set_form
     if (status == NO_ERROR) goto set_stream_done;
 
 set_stream_fail:
-    printf("set stream FAIL\n");
+    xprintf("set stream FAIL\n");
     pcm_deinit(ctx);
 
 set_stream_done:
@@ -317,7 +326,7 @@ static mx_status_t pcm_get_buffer(bcm_pcm_t* ctx, audio2_rb_cmd_get_buffer_req_t
     if (status != NO_ERROR) goto gb_fail;
 
 
-    printf("created %lu byte vmo\n",ctx->buffer_size);
+    xprintf("created %lu byte vmo\n",ctx->buffer_size);
     //ctx->buffer_vmo = vmo;
     //ctx->buffer_size = req.ring_buffer_bytes;
     //mx_vmo_get_size(ctx->buffer_vmo,&ctx->buffer_size);
@@ -337,7 +346,7 @@ static mx_status_t pcm_get_buffer(bcm_pcm_t* ctx, audio2_rb_cmd_get_buffer_req_t
                                                                 BCM_DMA_FLAGS_USE_MEM_INDEX |
                                                                 BCM_DMA_FLAGS_CIRCULAR);
     if (status != NO_ERROR) {
-        printf("VMO dma linking failed (%d)\n",status);
+        xprintf("VMO dma linking failed (%d)\n",status);
         goto gb_fail;
     }
     resp.result = status;
@@ -395,10 +404,10 @@ static int pcm_port_thread(void *arg) {
                     HANDLE_REQ(AUDIO2_RB_CMD_GET_FIFO_DEPTH, get_fifo_req     , pcm_get_fifo_depth);
                 case AUDIO2_RB_POSITION_NOTIFY:
                 default:
-                    printf("unrecognized buffer command\n");
+                    xprintf("unrecognized buffer command\n");
             }
         } else if (port_out.signals ==  MX_CHANNEL_PEER_CLOSED) {
-            printf("Closing channel %x\n",channel);
+            xprintf("Closing channel %x\n",channel);
 
             if (channel == ctx->stream_ch){
                 mx_handle_close(channel);
@@ -406,20 +415,20 @@ static int pcm_port_thread(void *arg) {
             }
             if (channel == ctx->buffer_ch) {
                 ctx->running = false;
-                printf("waiting on notify thread...");
+                xprintf("waiting on notify thread...");
                 while (ctx->notify_running);;
-                printf("done\n");
+                xprintf("done\n");
                 mx_handle_close(channel);
                 ctx->buffer_ch = MX_HANDLE_INVALID;
             }
         }
     }
-    printf("Tearing down this shitshow...\n");
+    xprintf("Tearing down this shitshow...\n");
     hifiberry_release();
     mx_handle_close(ctx->pcm_port);
     ctx->pcm_port = MX_HANDLE_INVALID;
     pcm_deinit(ctx);
-    printf("done\n");
+    xprintf("done\n");
     return 0;
 }
 
