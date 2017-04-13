@@ -1,0 +1,28 @@
+include "kernel/include/mdi/kernel-defs.mdi"
+
+cpu-map = {
+    clusters = {
+        {
+            cpu-count = 4
+        }
+    }
+}
+
+kernel-drivers = {
+    s905-uart = {
+        portnum = 3
+    }
+
+    arm-gic-v2 = {
+        base-phys = 0xc4300000
+        gicc-offset = 0x002000
+        gicd-offset = 0x001000
+        ipi-base = 5
+    }
+    arm-psci = {
+        use-smc = true
+    }
+    arm-generic-timer = {
+        irq-virt = 27 // INTERRUPT_ARM_LOCAL_CNTVIRQ
+    }
+}

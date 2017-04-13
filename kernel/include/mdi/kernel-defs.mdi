@@ -50,3 +50,7 @@ uint64  kernel-drivers.arm-gic-v2.gicd-offset   1062
 uint64  kernel-drivers.arm-gic-v2.gicc-offset   1063
 uint32  kernel-drivers.arm-gic-v2.ipi-base      1064
 uint64  kernel-drivers.arm-gic-v2.msi-frame-phys 1065
+
+// AmLogic S905
+list    kernel-drivers.s905-uart                   1070
+uint32  kernel-drivers.s905-uart.portnum           1071

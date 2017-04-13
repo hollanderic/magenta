@@ -50,6 +50,10 @@ FUNCTION(arm_reset)
     bl      arm64_elX_to_el1
     bl      arch_invalidate_cache_all
 
+    ldr     x0,=0xc8834464
+    ldr     w1,=0x0000000f
+    str     w1, [x0]
+
     /* enable caches so atomics and spinlocks work */
     mrs     tmp, sctlr_el1
     orr     tmp, tmp, #(1<<12) /* Enable icache */
