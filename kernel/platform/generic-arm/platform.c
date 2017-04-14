@@ -89,6 +89,52 @@ static pmm_arena_info_t arena = {
 
 static volatile int panic_started;
 
+static void gpio(uint32_t pin, uint32_t state) {
+    volatile uint32_t* gpioout = (uint32_t*)0xffffffffc8834464;
+    volatile uint32_t* gpioin = (uint32_t*)0xffffffffc8834468;
+
+    uint32_t value = *gpioin;
+    if (state) {
+        *gpioout = value | (1 << pin);
+    } else {
+        *gpioout = value & ~(1 << pin);
+    }
+}
+
+#define UART0_AO_BASE       (0xffffffffc81004c0)
+#define UARTREG(reg)  (*REG32((UART0_AO_BASE)  + (reg)))
+#define U_WFIFO  (0x0)
+#define U_RFIFO  (0x4)
+#define U_CONTROL (0x8)
+#define U_STATUS (0xc)
+#define U_IRQ_CONTROL (0x10)
+#define U_REG5 (0x14)
+
+static void uartput(char c) {
+    gpio(1,1);
+    while (UARTREG(U_STATUS) & (1<<21))
+        ;
+    UARTREG(U_WFIFO) = c;
+    gpio(1,0);
+}
+
+static char tonibble(uint8_t val) {
+    if (val < 10)
+        return (char)(val + '0');
+    return (char)(val - 10 + 'a');
+}
+
+static void putl(uint64_t value) {
+    uartput('0');
+    uartput('x');
+    for (int i=60 ; i>=0; i=i-4) {
+        uartput(tonibble( (uint8_t)((value >> i) & 0x0F)    ));
+    }
+    uartput('\n');
+    uartput('\r');
+}
+
+
 static void halt_other_cpus(void)
 {
 #if WITH_SMP
@@ -127,17 +173,23 @@ static void read_device_tree(void** ramdisk_base, size_t* ramdisk_size, size_t* 
     if (ramdisk_size) *ramdisk_size = 0;
     if (mem_size) *mem_size = 0;
 
+    gpio(2,1);
+    uartput('b');
+    putl((uint64_t)device_tree_paddr);
     void* fdt = paddr_to_kvaddr(device_tree_paddr);
     if (!fdt) {
         printf("%s: could not find device tree\n", __FUNCTION__);
         return;
     }
-
+    uartput('B');
+    putl((uint64_t)fdt);
+    uint64_t ret = fdt_check_header(fdt);
+    putl(ret);
     if (fdt_check_header(fdt) < 0) {
         printf("%s fdt_check_header failed\n", __FUNCTION__);
         return;
     }
-
+    uartput('c');
     int offset = fdt_path_offset(fdt, "/chosen");
     if (offset < 0) {
         printf("%s: fdt_path_offset(/chosen) failed\n", __FUNCTION__);
@@ -291,6 +343,8 @@ static void platform_mdi_init(void) {
     size_t offset = 0;
     bootdata_t* header = (ramdisk_base + offset);
     if (header->type != BOOTDATA_CONTAINER) {
+        uartput('P');
+        uartput('1');
         panic("invalid bootdata container header\n");
     }
     offset += sizeof(*header);
@@ -305,32 +359,46 @@ static void platform_mdi_init(void) {
         }
     }
     if (offset >= ramdisk_size) {
+        uartput('P');
+        uartput('2');
         panic("No MDI found in ramdisk\n");
     }
 
     if (mdi_init(ramdisk_base + offset, ramdisk_size - offset, &root) != NO_ERROR) {
+        uartput('P');
+        uartput('3');
         panic("mdi_init failed\n");
     }
 
     // search top level nodes for CPU info and kernel drivers
     if (mdi_find_node(&root, MDI_CPU_MAP, &cpu_map) != NO_ERROR) {
+                uartput('P');
+        uartput('4');
+
         panic("platform_mdi_init couldn't find cpu-map\n");
     }
     if (mdi_find_node(&root, MDI_KERNEL_DRIVERS, &kernel_drivers) != NO_ERROR) {
+        uartput('P');
+        uartput('5');
+
         panic("platform_mdi_init couldn't find kernel-drivers\n");
     }
-
+    uartput('X');
 #if WITH_SMP
     platform_cpu_early_init(&cpu_map);
 #endif
-
+    uartput('X');
     pdev_init(&kernel_drivers);
+    uartput('X');
 }
 
 void platform_early_init(void)
 {
     // QEMU does not put device tree pointer in the boot-time x2 register,
     // so set it here before calling read_device_tree.
+    gpio(0,1);
+    uartput('a');
+    putl(0xb00bfacedeadbeef);
     if (device_tree_paddr == 0) {
         device_tree_paddr = MEMBASE;
     }
@@ -338,8 +406,13 @@ void platform_early_init(void)
     // on qemu we read arena size from the device tree
     size_t arena_size = 0;
     read_device_tree(&ramdisk_base, &ramdisk_size, &arena_size);
+    gpio(0,0);
+    uartput('A');
+    putl((uint64_t)ramdisk_base);
+    putl(ramdisk_size);
 
     if (!ramdisk_base || !ramdisk_size) {
+        uartput('P');
         panic("no ramdisk!\n");
     }
 
@@ -357,6 +430,7 @@ void platform_early_init(void)
 #endif
 
     platform_preserve_ramdisk();
+    uartput('X');
 }
 
 void platform_init(void)
@@ -372,7 +446,9 @@ void platform_dputs(const char* str, size_t len)
         char c = *str++;
         if (c == '\n') {
             uart_putc('\r');
+            uartput('\r');
         }
+        uartput(c);
         uart_putc(c);
     }
 }
@@ -388,6 +464,7 @@ int platform_dgetc(char *c, bool wait)
 
 void platform_pputc(char c)
 {
+    uartput(c);
     uart_pputc(c);
 }
 

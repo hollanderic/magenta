@@ -45,6 +45,9 @@ static void call_constructors(void)
 /* called from arch code */
 void lk_main(void)
 {
+
+    volatile uint32_t* gpio = (uint32_t*)0xffffffffc8834464;
+    *gpio = 0;
     // get us into some sort of thread context
     thread_init_early();
 

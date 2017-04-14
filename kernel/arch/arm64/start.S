@@ -46,13 +46,19 @@ FUNCTION(arm_reset)
     mrs     x2, CurrentEL
     str     x0, [tmp, #:lo12:device_tree_paddr]
     str     x2, [tmp2, #:lo12:arch_boot_el]
-
+.Lhang:
+    ldr     x0,=0xc8834460
+    ldr     w1,=0x00000000
+    str     w1, [x0]
+    str     w1, [x0, #4]
     bl      arm64_elX_to_el1
     bl      arch_invalidate_cache_all
 
-    ldr     x0,=0xc8834464
-    ldr     w1,=0x0000000f
-    str     w1, [x0]
+
+
+
+
+
 
     /* enable caches so atomics and spinlocks work */
     mrs     tmp, sctlr_el1

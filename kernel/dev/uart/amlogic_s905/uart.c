@@ -63,11 +63,11 @@ static inline uintptr_t uart_to_ptr(unsigned int n)
 {
     switch (portnum) {
         default:
-        case 0: return paddr_to_kvaddr(UART0_BASE_PHYS)
-        case 1: return paddr_to_kvaddr(UART1_BASE_PHYS)
-        case 2: return paddr_to_kvaddr(UART2_BASE_PHYS)
-        case 3: return paddr_to_kvaddr(UART0_AO_BASE_PHYS)
-        case 4: return paddr_to_kvaddr(UART1_AO_BASE_PHYS)
+        case 0: return (uintptr_t)paddr_to_kvaddr(UART0_BASE_PHYS);
+        case 1: return (uintptr_t)paddr_to_kvaddr(UART1_BASE_PHYS);
+        case 2: return (uintptr_t)paddr_to_kvaddr(UART2_BASE_PHYS);
+        case 3: return (uintptr_t)paddr_to_kvaddr(UART0_AO_BASE_PHYS);
+        case 4: return (uintptr_t)paddr_to_kvaddr(UART1_AO_BASE_PHYS);
     }
 }
 
@@ -103,7 +103,7 @@ static enum handler_return uart_irq(void *arg)
 }
 #endif
 
-void s905_uart_init(mdi_node_ref_t* node, uint level)
+static void s905_uart_init(mdi_node_ref_t* node, uint level)
 {
 #if 0
     for (size_t i = 0; i < NUM_UART; i++) {
@@ -134,7 +134,7 @@ void s905_uart_init(mdi_node_ref_t* node, uint level)
 }
 
 
-int s905_uart_putc(char c)
+static int s905_uart_putc(char c)
 {
     if (!s905_uart_base)
         return 0;
@@ -147,7 +147,19 @@ int s905_uart_putc(char c)
     return 1;
 }
 
-int s905_uart_getc(bool wait)
+static int s905_uart_pgetc(void)
+{
+    if (!s905_uart_base)
+        return 0;
+
+    if ((UARTREG(s905_uart_base, UART_STATUS) & (1<<20)) == 0) {
+        return UARTREG(s905_uart_base, UART_RFIFO);
+    } else {
+        return -1;
+    }
+}
+
+static int s905_uart_getc(bool wait)
 {
 #if 0
     cbuf_t *rxbuf = &uart_rx_buf[port];
@@ -162,7 +174,7 @@ int s905_uart_getc(bool wait)
 }
 
 /* panic-time getc/putc */
-int s905_uart_pputc(char c)
+static int s905_uart_pputc(char c)
 {
     if (!s905_uart_base)
         return 0;
@@ -175,28 +187,17 @@ int s905_uart_pputc(char c)
     return 1;
 }
 
-int s905_uart_pgetc(void)
-{
-    if (!s905_uart_base)
-        return 0;
-
-    if ((UARTREG(s905_uart_base, UART_STATUS) & (1<<20)) == 0) {
-        return UARTREG(s905_uart_base, UART_RFIFO);
-    } else {
-        return -1;
-    }
-}
 
 
-void uart_flush_tx(int port)
+static void uart_flush_tx(int port)
 {
 }
 
-void uart_flush_rx(int port)
+static void uart_flush_rx(int port)
 {
 }
 
-void uart_init_port(int port, uint baud)
+static void uart_init_port(int port, uint baud)
 {
 }
 
@@ -207,21 +208,23 @@ static const struct pdev_uart_ops s905_uart_ops = {
     .pgetc = s905_uart_pgetc,
 };
 
-void s905_uart_init_early(mdi_node_ref_t* node, uint level)
+static void s905_uart_init_early(mdi_node_ref_t* node, uint level)
 {
 #if 0
     for (size_t i = 0; i < NUM_UART; i++) {
         UARTREG(uart_to_ptr(i), UART_CR) = (1<<8)|(1<<0); // tx_enable, uarten
     }
 #endif
-    bool got_port = false;
+    volatile uint32_t* gpio= (uint32_t*)0xffffffffc8834464;
+    *gpio = 0;
+
     uint32_t port_val = 0;
 
     mdi_node_ref_t child;
     mdi_each_child(node, &child) {
         switch (mdi_id(&child)) {
             case MDI_KERNEL_DRIVERS_S905_UART_PORTNUM:
-                if(mdi_node_uint32(&child, &portval) != NO_ERROR)
+                if(mdi_node_uint32(&child, &port_val) != NO_ERROR)
                     return;
                 break;
         }

@@ -7,7 +7,6 @@
 MODULES +=
 
 ENABLE_BUILD_LISTFILES:=true
-EMBED_USER_BOOTFS:=true
 
 include kernel/project/virtual/user.mk
 include kernel/project/virtual/test.mk
