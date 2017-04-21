@@ -418,7 +418,6 @@ void platform_early_init(void)
     if (boot_structure_paddr == 0) {
         boot_structure_paddr = MEMBASE;
     }
-<<<<<<< HEAD
 
     void* boot_structure_kvaddr = paddr_to_kvaddr(boot_structure_paddr);
     if (!boot_structure_kvaddr) {
@@ -437,13 +436,7 @@ void platform_early_init(void)
         // on qemu we read arena size from the device tree
         read_device_tree(&ramdisk_base, &ramdisk_size, &arena_size);
     }
-=======
-    // on qemu we read arena size from the device tree
-    size_t arena_size = 0;
-    uput('1');
-    read_device_tree(&ramdisk_base, &ramdisk_size, &arena_size);
-    uput('2');
->>>>>>> [arm64][odroidc2] odroidc2 target support
+
 
     if (!ramdisk_base || !ramdisk_size) {
         uput('!');

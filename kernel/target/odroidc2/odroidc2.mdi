@@ -3,7 +3,7 @@ include "kernel/include/mdi/kernel-defs.mdi"
 cpu-map = {
     clusters = {
         {
-            cpu-count = 1
+            cpu-count = 4
         }
     }
 }

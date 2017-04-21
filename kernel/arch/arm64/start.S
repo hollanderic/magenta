@@ -42,7 +42,7 @@ attr                    .req x27
 
 .section .text.boot, "ax", @progbits
 FUNCTION(_start)
-#if FASTBOOT_HEADER
+#if 1
 #include "fastboot-header.S"
 #endif
 FUNCTION(arm_reset)
