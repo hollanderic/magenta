@@ -89,6 +89,22 @@ static pmm_arena_info_t arena = {
 
 static volatile int panic_started;
 
+static void uput(char c) {
+    volatile uint32_t* wreg = (uint32_t*)(0xffffffffc81004c0 + 0x00);
+    volatile uint32_t* sreg = (uint32_t*)(0xffffffffc81004c0 + 0x0C);
+    while (*sreg & (1<<21))
+        ;
+    *wreg = c;
+}
+
+static void sput(const char* s,int len){
+    for (int i=0;i<len;i++)
+        uput(s[i]);
+    uput('\r');
+    uput('\n');
+}
+
+
 static void halt_other_cpus(void)
 {
 #if WITH_SMP
@@ -96,7 +112,9 @@ static void halt_other_cpus(void)
 
     if (atomic_swap(&halted, 1) == 0) {
         // stop the other cpus
+        sput("halted",7);
         printf("stopping other cpus\n");
+
         arch_mp_send_ipi(MP_CPU_ALL_BUT_LOCAL, MP_IPI_HALT);
 
         // spin for a while
@@ -110,6 +128,7 @@ static void halt_other_cpus(void)
 
 void platform_panic_start(void)
 {
+    sput("panic",5);
     arch_disable_ints();
 
     halt_other_cpus();
@@ -143,7 +162,7 @@ static void read_device_tree(void** ramdisk_base, size_t* ramdisk_size, size_t* 
         printf("%s: fdt_path_offset(/chosen) failed\n", __FUNCTION__);
         return;
     }
-
+    char tempstr[30];
     int length;
     const char* bootargs = fdt_getprop(fdt, offset, "bootargs", &length);
     if (bootargs) {
@@ -152,6 +171,7 @@ static void read_device_tree(void** ramdisk_base, size_t* ramdisk_size, size_t* 
     }
 
     if (ramdisk_base && ramdisk_size) {
+        sput("looking",7);
         const void* ptr = fdt_getprop(fdt, offset, "linux,initrd-start", &length);
         if (ptr) {
             if (length == 4) {
@@ -159,14 +179,27 @@ static void read_device_tree(void** ramdisk_base, size_t* ramdisk_size, size_t* 
             } else if (length == 8) {
                 ramdisk_start_phys = fdt64_to_cpu(*(uint64_t *)ptr);
             }
+             snprintf(tempstr,30,"rd-start:%lx  ",(uintptr_t)ramdisk_start_phys);
+             sput(tempstr,30);
         }
         ptr = fdt_getprop(fdt, offset, "linux,initrd-end", &length);
         if (ptr) {
+
+             snprintf(tempstr,30,"len:%x  ",(uint)length);
+             sput(tempstr,30);
+
             if (length == 4) {
                 ramdisk_end_phys = fdt32_to_cpu(*(uint32_t *)ptr);
+                snprintf(tempstr,30,"*ptr:%x  ",*(uint32_t *)ptr);
             } else if (length == 8) {
+                snprintf(tempstr,30,"*ptr:%lx  ",*(uint64_t*)ptr);
                 ramdisk_end_phys = fdt64_to_cpu(*(uint64_t *)ptr);
             }
+            sput(tempstr,30);
+             snprintf(tempstr,30,"rd-end:%lx  ",(uintptr_t)ramdisk_end_phys);
+             sput(tempstr,30);
+        } else {
+            sput("no rd end  ",9);
         }
 
         if (ramdisk_start_phys && ramdisk_end_phys) {
@@ -174,7 +207,16 @@ static void read_device_tree(void** ramdisk_base, size_t* ramdisk_size, size_t* 
             size_t length = ramdisk_end_phys - ramdisk_start_phys;
             *ramdisk_size = (length + PAGE_SIZE - 1) & ~(PAGE_SIZE - 1);
         }
+    } else {
+        sput("not looking"  ,11);
     }
+
+
+    snprintf(tempstr,30,"rdbase:%lx  ",(uintptr_t)*ramdisk_base);
+    sput(tempstr,30);
+    snprintf(tempstr,30,"rdsize:%lx  ",(uintptr_t)*ramdisk_size);
+    sput(tempstr,30);
+
 
     // look for memory size. currently only used for qemu build
     if (mem_size) {
@@ -276,8 +318,11 @@ static void* allocate_one_stack(void) {
 }
 
 static void platform_cpu_init(void) {
+    sput("pci2",4);
     for (uint cluster = 0; cluster < cpu_cluster_count; cluster++) {
+        sput("cluster",7);
         for (uint cpu = 0; cpu < cpu_cluster_cpus[cluster]; cpu++) {
+            sput("cpu",3);
             if (cluster != 0 || cpu != 0) {
                 void* sp = allocate_one_stack();
                 void* unsafe_sp = NULL;
@@ -285,7 +330,9 @@ static void platform_cpu_init(void) {
                 unsafe_sp = allocate_one_stack();
 #endif
                 arm64_set_secondary_sp(cluster, cpu, sp, unsafe_sp);
+
                 platform_start_cpu(cluster, cpu);
+                sput("--",2);
             }
         }
     }
@@ -320,6 +367,7 @@ static void platform_mdi_init(void) {
     size_t offset = 0;
     bootdata_t* header = (ramdisk_base + offset);
     if (header->type != BOOTDATA_CONTAINER) {
+        sput("ibch",4);
         panic("invalid bootdata container header\n");
     }
     offset += sizeof(*header);
@@ -334,10 +382,12 @@ static void platform_mdi_init(void) {
         }
     }
     if (offset >= ramdisk_size) {
+        sput("No MDI",6);
         panic("No MDI found in ramdisk\n");
     }
 
     if (mdi_init(ramdisk_base + offset, ramdisk_size - offset, &root) != NO_ERROR) {
+        sput("mdi fail",8);
         panic("mdi_init failed\n");
     }
 
@@ -358,11 +408,17 @@ static void platform_mdi_init(void) {
 
 void platform_early_init(void)
 {
+    uput('P');
+    uput('E');
+    uput('I');
+    uput('\r');
+    uput('\n');
     // QEMU does not put device tree pointer in the boot-time x2 register,
     // so set it here before calling read_device_tree.
     if (boot_structure_paddr == 0) {
         boot_structure_paddr = MEMBASE;
     }
+<<<<<<< HEAD
 
     void* boot_structure_kvaddr = paddr_to_kvaddr(boot_structure_paddr);
     if (!boot_structure_kvaddr) {
@@ -381,12 +437,21 @@ void platform_early_init(void)
         // on qemu we read arena size from the device tree
         read_device_tree(&ramdisk_base, &ramdisk_size, &arena_size);
     }
+=======
+    // on qemu we read arena size from the device tree
+    size_t arena_size = 0;
+    uput('1');
+    read_device_tree(&ramdisk_base, &ramdisk_size, &arena_size);
+    uput('2');
+>>>>>>> [arm64][odroidc2] odroidc2 target support
 
     if (!ramdisk_base || !ramdisk_size) {
+        uput('!');
         panic("no ramdisk!\n");
     }
-
+    uput('3');
     platform_mdi_init();
+    uput('4');
 
     /* add the main memory arena */
     if (arena_size) {
@@ -398,15 +463,23 @@ void platform_early_init(void)
     /* Allocate memory regions reserved by bootloaders for other functions */
     pmm_alloc_range(BOOTLOADER_RESERVE_START, BOOTLOADER_RESERVE_SIZE / PAGE_SIZE, NULL);
 #endif
-
+    uput('5');
     platform_preserve_ramdisk();
+    uput('6');
 }
 
 void platform_init(void)
 {
+    uput('P');
+    uput('I');
+    uput('\r');
+    uput('\n');
 #if WITH_SMP
+    sput("pci",3);
     platform_cpu_init();
+
 #endif
+    sput("pci*",4);
 }
 
 void platform_dputs(const char* str, size_t len)
@@ -415,7 +488,9 @@ void platform_dputs(const char* str, size_t len)
         char c = *str++;
         if (c == '\n') {
             uart_putc('\r');
+            uput('\r');
         }
+        uput(c);
         uart_putc(c);
     }
 }
@@ -431,6 +506,7 @@ int platform_dgetc(char *c, bool wait)
 
 void platform_pputc(char c)
 {
+    uput(c);
     uart_pputc(c);
 }
 

@@ -11,8 +11,8 @@ _fastboot_start:
     add x13, x18, #0x16
     b header_end
 
-    .quad   0
-    .quad   0
+    .quad   KERNEL_LOAD_OFFSET
+    .quad   0x300000
     .quad   0
 
     .quad   0
