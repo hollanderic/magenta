@@ -13,7 +13,7 @@ _fastboot_start:
 
     .quad   KERNEL_LOAD_OFFSET
     .quad   __data_end - _start
-    .quad   0
+    .quad   0x0a
 
     .quad   0
     .quad   0

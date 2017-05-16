@@ -47,6 +47,12 @@ FUNCTION(_start)
 #include "fastboot-header.S"
 #endif
 FUNCTION(arm_reset)
+    ldr     x4, =0xff3b3000
+    ldr     x5, =0xc0
+    strb    w5, [x4, #0x400]
+    ldr     x5, =0x80
+    strb    w5, [x4, #0x300]
+
     adrp    tmp, boot_structure_paddr
     adrp    tmp2, arch_boot_el
     mrs     x2, CurrentEL

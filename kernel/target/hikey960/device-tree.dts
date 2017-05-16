@@ -1,0 +1,14 @@
+/dts-v1/;
+
+/ {
+    hisilicon,kirin-id = <0x124 0x20000>;
+    hisilicon,board-id = <0x1e 0x0>;
+
+    chosen {
+        // need a dummy bootargs for bootloader to append to
+        bootargs = "";
+    };
+
+    // empty node needed to make fastboot happy
+    memory {};
+};
