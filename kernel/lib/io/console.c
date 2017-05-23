@@ -25,6 +25,8 @@
 /* enable this to cause the kernel-originated messages to splat messages out of the platform
  * putc mechanism immediately instead of going through the debug log
  */
+#define ENABLE_KERNEL_LL_DEBUG 1
+
 #ifndef ENABLE_KERNEL_LL_DEBUG
 #define ENABLE_KERNEL_LL_DEBUG 0
 #endif

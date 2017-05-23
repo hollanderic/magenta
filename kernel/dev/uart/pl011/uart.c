@@ -72,6 +72,8 @@ static enum handler_return pl011_uart_irq(void *arg)
 
 static void pl011_uart_init(mdi_node_ref_t* node, uint level)
 {
+
+    printf("PL011: in init\n");
     // create circular buffer to hold received data
     cbuf_initialize(&uart_rx_buf, RXBUF_SIZE);
 
@@ -165,8 +167,9 @@ static void pl011_uart_init_early(mdi_node_ref_t* node, uint level) {
     if (!got_uart_irq) {
         panic("pl011 uart: uart_irq not defined\n");
     }
-
-    uart_base = (uint64_t)paddr_to_kvaddr(uart_base_phys);
+    printf("pl011 base address phys = %lx\n",uart_base_phys);
+    uart_base = (uint64_t)(PERIPH_BASE_VIRT + (uart_base_phys - PERIPH_BASE_PHYS));//     paddr_to_kvaddr(uart_base_phys);
+    printf("pl011 base address virt = %lx\n",uart_base);
 
     UARTREG(uart_base, UART_CR) = (1<<8)|(1<<0); // tx_enable, uarten
 

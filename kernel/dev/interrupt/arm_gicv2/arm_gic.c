@@ -368,7 +368,7 @@ static void arm_gic_v2_init(mdi_node_ref_t* node, uint level) {
         return;
     }
 
-    arm_gicv2_gic_base = (uint64_t)paddr_to_kvaddr(gic_base_phys);
+    arm_gicv2_gic_base = (uint64_t)(PERIPH_BASE_VIRT + (gic_base_phys - PERIPH_BASE_PHYS));//(uint64_t)paddr_to_kvaddr(gic_base_phys);
 
     arm_gic_init();
     if (msi_frame_phys) {

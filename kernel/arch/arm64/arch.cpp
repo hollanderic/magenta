@@ -285,7 +285,7 @@ void arch_enter_uspace(uintptr_t pc, uintptr_t sp, uintptr_t arg1, uintptr_t arg
      * all interrupts enabled
      * mode 0: EL0t
      */
-    uint32_t spsr = 0;
+    uint32_t spsr = 1 << 8;
 
     arch_disable_ints();
 
