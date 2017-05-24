@@ -1,0 +1,79 @@
+#  Magenta on 96boards.org HiKey960
+
+## Requirements
+
+1. The following hardware is required:
+  + HiKey960 + Power Adapter (Look [here](http://www.96boards.org/product/hikey960/) for more info)
+  + USB-C cable to connect to workstation for purpose of flashing
+  + 1.8v FTDI Serial Dongle for serial console
+  + Optional: mezzanine board
+
+2. The following software is required:
+ + Fastboot. Can be installed on Ubuntu via:
+
+      `sudo apt-get install android-tools-fastboot`
+
+ + mkbootimg, mkdtimg. It is suggested to use the version of these tools available in the /build-from-source dirctory of the 96boards-hikey tools repo on github.  Both of these tools will need to be in your execution path.
+
+      `git clone https://github.com/96boards-hikey/tools-images-hikey960.git`
+
+## Building
+To build magenta, invoke the following command from the top level Magenta
+directory (ensure that you have checked out the ARM64 toolchains). For more
+information, see `docs/getting_started.md`:
+
+      `make magenta-hikey960-arm64`
+
+## Setup
+
+## Installing
+1. To install Magenta, ensure that your SD is formatted as follows:
+   + Using an MBR partition table
+   + With a FAT32 boot partition
+
+2. Invoking `make magenta-rpi3-arm64` should have created files `magenta.bin`
+   and `bootdata.bin` the following path `./build-magenta-rpi3-arm64/`
+
+
+3. Copy the `magenta.bin` file to the SD card's boot partition as `kernel8.img`
+   as follows:
+
+        cp ./build-magenta-rpi3-arm64/magenta.bin <path/to/sdcard/mount>/kernel8.img
+
+4. Copy the `bootdata.bin` file to the SD card's boot partition as follows:
+
+        cp ./build-magenta-rpi3-arm64/bootdata.bin <path/to/sdcard/mount>/bootdata.bin
+
+5. You must also copy `bootcode.bin` and `start.elf` to the boot partition. They
+   can be obtained from [here](https://github.com/raspberrypi/firmware/raw/7fcb39cb5b5543ca7485cd1ae9e6d908f31e40c6/boot/bootcode.bin) and [here](https://github.com/raspberrypi/firmware/raw/390f53ed0fd79df274bdcc81d99e09fa262f03ab/boot/start.elf) respectively.
+
+6. Copy `config.txt` `cmdline.txt` and `bcm2710-rpi-3-b.dtb` from
+   `./kernel/target/rpi3/` to the boot partition:
+
+         cp ./kernel/target/rpi3/config.txt <path/to/sdcard/mount>/config.txt
+         cp ./kernel/target/rpi3/cmdline.txt <path/to/sdcard/mount>/cmdline.txt
+         cp ./kernel/target/rpi3/bcm2710-rpi-3-b.dtb <path/to/sdcard/mount>/bcm2710-rpi-3-b.dtb
+
+   It is imperative that these files are named exactly as listed when copied to
+   the SD card.
+
+7. At this point your SD Card should be formatted with an MBR partition table
+   and FAT32 boot partition that contains the following 7 files:
+   + bootcode.bin
+   + bootdata.bin
+   + config.txt
+   + kernel8.img
+   + start.elf
+   + bcm2710-rpi-3-b.dtb
+   + cmdline.txt
+
+8. If you're using the Serial Console, connect your serial dongle to the RPi3
+   header as follows:
+   1. Pin 6 - GND
+   2. Pin 8 - TXD (output from Pi)
+   3. Pin 10 - RXD (input to pi)
+   4. Baudrate = 115200
+
+9. Insert the SD Card and connect power to boot the Pi
+
+
