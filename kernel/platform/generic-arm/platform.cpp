@@ -530,6 +530,11 @@ void platform_early_init(void)
     } else {
         // on qemu we read arena size from the device tree
         read_device_tree(&ramdisk_base, &ramdisk_size, &arena_size);
+        // Some legacy bootloaders do not properly set linux,initrd-end
+        // Pull the ramdisk size directly from the bootdata container
+        //   now that we have the base to ensure that the size is valid.
+        ramdisk_from_bootdata_container(ramdisk_base, &ramdisk_base,
+                                        &ramdisk_size);
     }
 
     if (!ramdisk_base || !ramdisk_size) {
@@ -572,9 +577,32 @@ void platform_early_init(void)
     platform_preserve_ramdisk();
 }
 
+static int watch_thread(void* arg) {
+    printf("Watching GIC REGS\n");
+    volatile uint32_t* gicd = (uint32_t*)0xffffffffc4301000;
+    volatile uint32_t* uart = (uint32_t*)0xffffffffc81004c0;
+    for (;;) {
+        for (int i = 0; i < 8; i++)
+            printf("%d: %08x  %08x  %08x\n",i,gicd[128+i],gicd[256+i],gicd[192+i]);
+        printf("UART: %08x\n",uart[3]);
+        while ((uart[3]&0x0FF) > 0)
+            printf("%x\n",uart[1]);
+        thread_sleep_relative(LK_SEC(1));
+
+    }
+}
+
 void platform_init(void)
 {
     platform_cpu_init();
+<<<<<<< HEAD
+=======
+#endif
+
+     thread_t* t = thread_create("watch", watch_thread, nullptr, DEFAULT_PRIORITY, DEFAULT_STACK_SIZE);
+     thread_resume(t);
+
+>>>>>>> junky junk
 }
 
 void platform_dputs(const char* str, size_t len)

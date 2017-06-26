@@ -36,5 +36,6 @@ MODULE_DEPS += \
 	kernel/dev/qemu \
 	kernel/dev/uart/bcm28xx \
 	kernel/dev/uart/pl011 \
+	kernel/dev/uart/amlogic_s905 \
 
 include make/module.mk
