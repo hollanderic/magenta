@@ -577,17 +577,53 @@ void platform_early_init(void)
     platform_preserve_ramdisk();
 }
 
+
+
+#define GIC_VIRT_BASE (0xffffffffc4300000)
+
+#define GICD_BASE (GIC_VIRT_BASE + 0x1000)
+#define GICC_BASE (GIC_VIRT_BASE + 0x2000)
+
+#define GICH_BASE (GIC_VIRT_BASE + 0x4000 )
+#define GICV_BASE (GIC_VIRT_BASE + 0x6000)
+
+#define GICD_IGROUPR (GICD_BASE + 0x80)
+#define GICD_ISENABLEDR (GICD_BASE + 0x100)
+#define GICD_ISPENDR (GICD_BASE + 0x200)
+#define GICD_ICFGRn (GICD_BASE + 0xc00)
+#define GICD_SR (GICD_BASE + 0xd00)
+
+#define GICH_LRn (GICH_BASE + 0x100)
+
+#define GICREG32(base,index)  (((volatile uint32_t*)base)[index])
+
+
+#define GPIO_A0_BASE (0xffffffffc8100000)
+
+
+
 static int watch_thread(void* arg) {
     printf("Watching GIC REGS\n");
-    volatile uint32_t* gicd = (uint32_t*)0xffffffffc4301000;
     volatile uint32_t* uart = (uint32_t*)0xffffffffc81004c0;
     for (;;) {
         for (int i = 0; i < 8; i++)
-            printf("%d: %08x  %08x  %08x\n",i,gicd[128+i],gicd[256+i],gicd[192+i]);
-        printf("UART: %08x\n",uart[3]);
-        while ((uart[3]&0x0FF) > 0)
-            printf("%x\n",uart[1]);
-        thread_sleep_relative(LK_SEC(1));
+            printf("%d: %08x  %08x  %08x  %08x  %08x\n",i, GICREG32(GICD_IGROUPR,i),
+                                                     GICREG32(GICD_ISENABLEDR,i),
+                                                     GICREG32(GICD_ISPENDR,i),
+                                                     GICREG32(GICD_SR,i),
+                                                     GICREG32(GICH_LRn,i));
+        for (int i = 0; i < 16; i++)
+            printf("GICD_ICFGR%02d   %08x\n",i,GICREG32(GICD_ICFGRn,i));
+        printf("UART STATUS: %08x\n",uart[3]);
+        printf("UART CONTROL: %08x\n",uart[2]);
+        printf("UART MISC: %08x\n",uart[4]);
+
+        printf("GPIO[9] %08x\n",GICREG32(GPIO_A0_BASE,0x09));
+        printf("GPIO[a] %08x\n",GICREG32(GPIO_A0_BASE,0x0a));
+        printf("GPIO[b] %08x\n",GICREG32(GPIO_A0_BASE,0x0b));
+        //while ((uart[3]&0x0FF) > 0)
+        //    printf("%x\n",uart[1]);
+        thread_sleep_relative(LK_SEC(3));
 
     }
 }
@@ -595,14 +631,10 @@ static int watch_thread(void* arg) {
 void platform_init(void)
 {
     platform_cpu_init();
-<<<<<<< HEAD
-=======
-#endif
 
-     thread_t* t = thread_create("watch", watch_thread, nullptr, DEFAULT_PRIORITY, DEFAULT_STACK_SIZE);
-     thread_resume(t);
+     //thread_t* t = thread_create("watch", watch_thread, nullptr, DEFAULT_PRIORITY, DEFAULT_STACK_SIZE);
+     //thread_resume(t);
 
->>>>>>> junky junk
 }
 
 void platform_dputs(const char* str, size_t len)

@@ -51,14 +51,15 @@
 #define RXBUF_SIZE 128
 #define NUM_UART 5
 
-#define UART0_BASE_PHYS          (0xc11084c0)
-#define UART1_BASE_PHYS          (0xc11084dc)
-#define UART2_BASE_PHYS          (0xc1108700)
-#define UART0_AO_BASE_PHYS       (0xc81004c0)
-#define UART1_AO_BASE_PHYS       (0xc81004e0)
+#define S905_UART0_OFFSET          (0x011084c0)
+#define S905_UART1_OFFSET          (0x011084dc)
+#define S905_UART2_OFFSET          (0x01108700)
+#define S905_UART0_AO_OFFSET       (0x081004c0)
+#define S905_UART1_AO_OFFSET       (0x081004e0)
 
 
 #define UART0_A0_INT            (225)
+
 
 static cbuf_t uart_rx_buf;
 static bool initialized = false;
@@ -86,20 +87,19 @@ static void sput(const char* s,int len){
 static inline uintptr_t uart_to_ptr(unsigned int n)
 {
     switch (n) {
-        case 0: return (uintptr_t)paddr_to_kvaddr(UART0_BASE_PHYS);
-        case 1: return (uintptr_t)paddr_to_kvaddr(UART1_BASE_PHYS);
-        case 2: return (uintptr_t)paddr_to_kvaddr(UART2_BASE_PHYS);
-        case 4: return (uintptr_t)paddr_to_kvaddr(UART1_AO_BASE_PHYS);
+        case 0: return (uintptr_t)(S905_UART0_OFFSET + PERIPH_BASE_VIRT);
+        case 1: return (uintptr_t)(S905_UART1_OFFSET + PERIPH_BASE_VIRT);
+        case 2: return (uintptr_t)(S905_UART2_OFFSET + PERIPH_BASE_VIRT);
+        case 4: return (uintptr_t)(S905_UART1_AO_OFFSET + PERIPH_BASE_VIRT);
         default:
-        case 3: return (uintptr_t)paddr_to_kvaddr(UART0_AO_BASE_PHYS);
-
+        case 3: return (uintptr_t)(S905_UART0_AO_OFFSET + PERIPH_BASE_VIRT);
     }
 }
 
 #if 1
 static enum handler_return uart_irq(void *arg)
 {
-    sput("INTERRRRRRUUUUUUUUPPPPPPPPTTTTTTT",30);
+    //sput("INTERRRRRRUUUUUUUUPPPPPPPPTTTTTTT",30);
     uint port = (uintptr_t)arg;
     uintptr_t base = uart_to_ptr(port);
 
@@ -130,22 +130,16 @@ static void s905_uart_init(mdi_node_ref_t* node, uint level)
         cbuf_initialize(&uart_rx_buf, RXBUF_SIZE);
 
         // assumes interrupts are contiguous
-        register_int_handler(UART0_A0_INT, &uart_irq, (void *)3);
 
+        printf("uart_base %lx\n",s905_uart_base);
         printf("UART CONTROL REG = %08x\n",UARTREG(s905_uart_base, UART_CONTROL));
         printf("UART STATUS REG = %08x\n",UARTREG(s905_uart_base, UART_STATUS));
         printf("UART IRG REG = %08x\n",UARTREG(s905_uart_base, UART_IRQ_CONTROL));
         printf("UART REG REG = %08x\n",UARTREG(s905_uart_base, UART_REG5));
 
-        UARTREG(s905_uart_base,UART_CONTROL) = 0x00;
+        //UARTREG(s905_uart_base,UART_CONTROL) = 0x00;
 
-        uint32_t temp2 = UARTREG(s905_uart_base,UART_IRQ_CONTROL);
-        temp2 &= 0xffff0000;
-        temp2 |= (1 << 8) | ( 1 );
-        UARTREG(s905_uart_base,UART_IRQ_CONTROL) = temp2;
-
-
-
+        //reset the port
         uint32_t temp = UARTREG(s905_uart_base,UART_CONTROL);
         temp |=  (1 << 22) | (1 << 23) | (1<<24);
         UARTREG(s905_uart_base,UART_CONTROL) = temp;
@@ -154,13 +148,36 @@ static void s905_uart_init(mdi_node_ref_t* node, uint level)
         UARTREG(s905_uart_base,UART_CONTROL) = temp;
 
 
-
-
-        temp |= (1 << 12) | (1 << 13);
+        // enable rx and tx
+        temp = UARTREG(s905_uart_base,UART_CONTROL);
+        temp |= (1 << 12) | (1 << 13) ;
         UARTREG(s905_uart_base,UART_CONTROL) = temp;
 
-        temp |= (1 << 27);
+
+        // rx int enable, two wire enable
+        temp |= (1 << 27) | (1 << 15) | (1 << 31);
         UARTREG(s905_uart_base,UART_CONTROL) = temp;
+
+
+        uint32_t temp2 = UARTREG(s905_uart_base,UART_IRQ_CONTROL);
+        temp2 &= 0xffff0000;
+        temp2 |= (1 << 8) | ( 1 );
+        UARTREG(s905_uart_base,UART_IRQ_CONTROL) = temp2;
+
+#define GIC_CFG_BASE (0xffffffffc4301C00)
+        uint32_t cfg_reg = (UART0_A0_INT >> 2) & ~(0x3);
+        uint32_t bit_pos = (UART0_A0_INT & 0xF) << 1;
+        printf("using gicd_cfg reg %x bit %u\n",cfg_reg,bit_pos);
+        uint32_t cfg_val = UARTREG(GIC_CFG_BASE,cfg_reg);
+        printf("gicd_cfg reg before = %08x\n",UARTREG(GIC_CFG_BASE,cfg_reg));
+        cfg_val |=  (0x3 << bit_pos);
+        UARTREG(GIC_CFG_BASE,cfg_reg) = cfg_val;
+
+        register_int_handler(UART0_A0_INT, &uart_irq, (void *)3);
+        printf("gicd_cfg reg after = %08x\n",UARTREG(GIC_CFG_BASE,cfg_reg));
+
+
+
 
 
         printf("UART CONTROL REG = %08x\n",UARTREG(s905_uart_base, UART_CONTROL));
@@ -174,24 +191,6 @@ static void s905_uart_init(mdi_node_ref_t* node, uint level)
         printf("\n");
         initialized = true;
 
-/*
-
-#define UART_CONTROL (0x8)
-#define UART_STATUS (0xc)
-#define UART_IRQ_CONTROL (0x10)
-#define UART_REG5 (0x14)
-        // clear all irqs
-        UARTREG(s905_uart_base, UART_ICR) = 0x3ff;
-
-        // set fifo trigger level
-        UARTREG(s905_uart_base, UART_IFLS) = 0; // 1/8 rxfifo, 1/8 txfifo
-
-        // enable rx interrupt
-        UARTREG(s905_uart_base, UART_IMSC) = (1<<4); // rxim
-
-        // enable receive
-        UARTREG(s905_uart_base, UART_CR) |= (1<<9); // rxen
-*/
         // enable interrupt
         unmask_interrupt(UART0_A0_INT);
 
@@ -285,14 +284,15 @@ static void s905_uart_init_early(mdi_node_ref_t* node, uint level)
         UARTREG(uart_to_ptr(i), UART_CR) = (1<<8)|(1<<0); // tx_enable, uarten
     }
 #endif
-    sput("RRRRRRRRRRRRRRRRRRRR",20);
+    if (!s905_uart_base)
+        sput("EEEERRRRRRRRRRRRRRRR",20);
     uint32_t port_val = 0;
 
     mdi_node_ref_t child;
     mdi_each_child(node, &child) {
         switch (mdi_id(&child)) {
-            case MDI_KERNEL_DRIVERS_S905_UART_PORTNUM:
-                if(mdi_node_uint32(&child, &port_val) != NO_ERROR)
+            case MDI_S905_UART_PORTNUM:
+                if(mdi_node_uint32(&child, &port_val) != MX_OK)
                     return;
                 break;
         }
@@ -303,5 +303,5 @@ static void s905_uart_init_early(mdi_node_ref_t* node, uint level)
     pdev_register_uart(&s905_uart_ops);
 }
 
-LK_PDEV_INIT(s905_uart_init_early, MDI_KERNEL_DRIVERS_S905_UART, s905_uart_init_early, LK_INIT_LEVEL_PLATFORM_EARLY);
-LK_PDEV_INIT(s905_uart_init, MDI_KERNEL_DRIVERS_S905_UART, s905_uart_init, LK_INIT_LEVEL_PLATFORM);
+LK_PDEV_INIT(s905_uart_init_early, MDI_S905_UART, s905_uart_init_early, LK_INIT_LEVEL_PLATFORM_EARLY);
+LK_PDEV_INIT(s905_uart_init, MDI_S905_UART, s905_uart_init, LK_INIT_LEVEL_PLATFORM);
