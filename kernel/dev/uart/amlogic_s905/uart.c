@@ -1,5 +1,4 @@
-// Copyright 2016 The Fuchsia Authors
-// Copyright (c) 2014-2015 Travis Geiselbrecht
+// Copyright 2017 The Fuchsia Authors
 //
 // Use of this source code is governed by a MIT-style
 // license that can be found in the LICENSE file or at
@@ -19,32 +18,51 @@
 #include <pdev/driver.h>
 #include <pdev/uart.h>
 
-/* PL011 implementation */
-#if 1
-#define UART_DR    (0x00)
-#define UART_RSR   (0x04)
-#define UART_TFR   (0x18)
-#define UART_ILPR  (0x20)
-#define UART_IBRD  (0x24)
-#define UART_FBRD  (0x28)
-#define UART_LCRH  (0x2c)
-#define UART_CR    (0x30)
-#define UART_IFLS  (0x34)
-#define UART_IMSC  (0x38)
-#define UART_TRIS  (0x3c)
-#define UART_TMIS  (0x40)
-#define UART_ICR   (0x44)
-#define UART_DMACR (0x48)
-#endif
-
-#define UART_WFIFO  (0x0)
-#define UART_RFIFO  (0x4)
-#define UART_CONTROL (0x8)
-#define UART_STATUS (0xc)
-#define UART_IRQ_CONTROL (0x10)
-#define UART_REG5 (0x14)
+#define S905_UART_WFIFO         (0x0)
+#define S905_UART_RFIFO         (0x4)
+#define S905_UART_CONTROL       (0x8)
+#define S905_UART_STATUS        (0xc)
+#define S905_UART_IRQ_CONTROL   (0x10)
+#define S905_UART_REG5          (0x14)
 
 
+#define S905_UART_CONTROL_INVRTS    (1 << 31)
+#define S905_UART_CONTROL_MASKERR   (1 << 30)
+#define S905_UART_CONTROL_INVCTS    (1 << 29)
+#define S905_UART_CONTROL_TXINTEN   (1 << 28)
+#define S905_UART_CONTROL_RXINTEN   (1 << 27)
+#define S905_UART_CONTROL_INVTX     (1 << 26)
+#define S905_UART_CONTROL_INVRX     (1 << 25)
+#define S905_UART_CONTROL_CLRERR    (1 << 24)
+#define S905_UART_CONTROL_RSTRX     (1 << 23)
+#define S905_UART_CONTROL_RSTTX     (1 << 22)
+#define S905_UART_CONTROL_XMITLEN   (1 << 20)
+#define S905_UART_CONTROL_XMITLEN_MASK   (0x3 << 20)
+#define S905_UART_CONTROL_PAREN     (1 << 19)
+#define S905_UART_CONTROL_PARTYPE   (1 << 18)
+#define S905_UART_CONTROL_STOPLEN   (1 << 16)
+#define S905_UART_CONTROL_STOPLEN_MASK   (0x3 << 16)
+#define S905_UART_CONTROL_TWOWIRE   (1 << 15)
+#define S905_UART_CONTROL_RXEN      (1 << 13)
+#define S905_UART_CONTROL_TXEN      (1 << 12)
+#define S905_UART_CONTROL_BAUD0     (1 << 0)
+#define S905_UART_CONTROL_BAUD0_MASK     (0xfff << 0)
+
+#define S905_UART_STATUS_RXBUSY         (1 << 26)
+#define S905_UART_STATUS_TXBUSY         (1 << 25)
+#define S905_UART_STATUS_RXOVRFLW       (1 << 24)
+#define S905_UART_STATUS_CTSLEVEL       (1 << 23)
+#define S905_UART_STATUS_TXEMPTY        (1 << 22)
+#define S905_UART_STATUS_TXFULL         (1 << 21)
+#define S905_UART_STATUS_RXEMPTY        (1 << 20)
+#define S905_UART_STATUS_RXFULL         (1 << 19)
+#define S905_UART_STATUS_TXOVRFLW       (1 << 18)
+#define S905_UART_STATUS_FRAMEERR       (1 << 17)
+#define S905_UART_STATUS_PARERR         (1 << 16)
+#define S905_UART_STATUS_TXCOUNT_POS    (8)
+#define S905_UART_STATUS_TXCOUNT_MASK   (0x7f << S905_UART_STATUS_TXCOUNT_POS)
+#define S905_UART_STATUS_RXCOUNT_POS    (0)
+#define S905_UART_STATUS_RXCOUNT_MASK   (0x7f << S905_UART_STATUS_RXCOUNT_POS)
 
 #define UARTREG(base, reg)  (*(volatile uint32_t*)((base)  + (reg)))
 
@@ -57,15 +75,12 @@
 #define S905_UART0_AO_OFFSET       (0x081004c0)
 #define S905_UART1_AO_OFFSET       (0x081004e0)
 
-
 #define UART0_A0_INT            (225)
 
 
 static cbuf_t uart_rx_buf;
 static bool initialized = false;
 static uintptr_t s905_uart_base = 0;
-
-//static cbuf_t uart_rx_buf[NUM_UART];
 
 static void uput(char c) {
     volatile uint32_t* wreg = (uint32_t*)(0xffffffffc81004c0 + 0x00);
@@ -82,8 +97,6 @@ static void sput(const char* s,int len){
     uput('\n');
 }
 
-
-
 static inline uintptr_t uart_to_ptr(unsigned int n)
 {
     switch (n) {
@@ -96,105 +109,56 @@ static inline uintptr_t uart_to_ptr(unsigned int n)
     }
 }
 
-#if 1
 static enum handler_return uart_irq(void *arg)
 {
-    //sput("INTERRRRRRUUUUUUUUPPPPPPPPTTTTTTT",30);
     uint port = (uintptr_t)arg;
     uintptr_t base = uart_to_ptr(port);
 
     /* read interrupt status and mask */
 
-    while ( (UARTREG(base, UART_STATUS)&0x0000000f) > 0 ) { // rxmis
+    while ( (UARTREG(base, S905_UART_STATUS)&0x0000007f) > 0 ) { // rxmis
         if (cbuf_space_avail(&uart_rx_buf) == 0) {
                 break;
         }
-        char c = UARTREG(base, UART_RFIFO);
+        char c = UARTREG(base, S905_UART_RFIFO);
         cbuf_write_char(&uart_rx_buf, c, false);
-
     }
 
     return true;
 }
-#endif
 
 static void s905_uart_init(mdi_node_ref_t* node, uint level)
 {
-#if 1
-        if (!s905_uart_base) {
-            return;
-        }
-        sput("IIIIIIIIIIIIIIIIIIII",20);
-        printf("jjjjjjjjjjjjjjjjj\n");
         // create circular buffer to hold received data
         cbuf_initialize(&uart_rx_buf, RXBUF_SIZE);
 
-        // assumes interrupts are contiguous
-
-        printf("uart_base %lx\n",s905_uart_base);
-        printf("UART CONTROL REG = %08x\n",UARTREG(s905_uart_base, UART_CONTROL));
-        printf("UART STATUS REG = %08x\n",UARTREG(s905_uart_base, UART_STATUS));
-        printf("UART IRG REG = %08x\n",UARTREG(s905_uart_base, UART_IRQ_CONTROL));
-        printf("UART REG REG = %08x\n",UARTREG(s905_uart_base, UART_REG5));
-
-        //UARTREG(s905_uart_base,UART_CONTROL) = 0x00;
-
         //reset the port
-        uint32_t temp = UARTREG(s905_uart_base,UART_CONTROL);
-        temp |=  (1 << 22) | (1 << 23) | (1<<24);
-        UARTREG(s905_uart_base,UART_CONTROL) = temp;
-
-        temp &= ~((1 << 22) | (1 << 23) | (1<<24));
-        UARTREG(s905_uart_base,UART_CONTROL) = temp;
-
-
+        UARTREG(s905_uart_base,S905_UART_CONTROL) |=  S905_UART_CONTROL_RSTRX |
+                                                      S905_UART_CONTROL_RSTTX |
+                                                      S905_UART_CONTROL_CLRERR;
+        UARTREG(s905_uart_base,S905_UART_CONTROL) &= ~(S905_UART_CONTROL_RSTRX |
+                                                       S905_UART_CONTROL_RSTTX |
+                                                       S905_UART_CONTROL_CLRERR);
         // enable rx and tx
-        temp = UARTREG(s905_uart_base,UART_CONTROL);
-        temp |= (1 << 12) | (1 << 13) ;
-        UARTREG(s905_uart_base,UART_CONTROL) = temp;
+        UARTREG(s905_uart_base,S905_UART_CONTROL) |= S905_UART_CONTROL_TXEN |
+                                                     S905_UART_CONTROL_RXEN;
 
+        UARTREG(s905_uart_base,S905_UART_CONTROL) |= S905_UART_CONTROL_INVRTS |
+                                                     S905_UART_CONTROL_RXINTEN |
+                                                     S905_UART_CONTROL_TWOWIRE;
 
-        // rx int enable, two wire enable
-        temp |= (1 << 27) | (1 << 15) | (1 << 31);
-        UARTREG(s905_uart_base,UART_CONTROL) = temp;
-
-
-        uint32_t temp2 = UARTREG(s905_uart_base,UART_IRQ_CONTROL);
+        // Set to interrupt every 1 rx byte
+        uint32_t temp2 = UARTREG(s905_uart_base,S905_UART_IRQ_CONTROL);
         temp2 &= 0xffff0000;
         temp2 |= (1 << 8) | ( 1 );
-        UARTREG(s905_uart_base,UART_IRQ_CONTROL) = temp2;
-
-#define GIC_CFG_BASE (0xffffffffc4301C00)
-        uint32_t cfg_reg = (UART0_A0_INT >> 2) & ~(0x3);
-        uint32_t bit_pos = (UART0_A0_INT & 0xF) << 1;
-        printf("using gicd_cfg reg %x bit %u\n",cfg_reg,bit_pos);
-        uint32_t cfg_val = UARTREG(GIC_CFG_BASE,cfg_reg);
-        printf("gicd_cfg reg before = %08x\n",UARTREG(GIC_CFG_BASE,cfg_reg));
-        cfg_val |=  (0x3 << bit_pos);
-        UARTREG(GIC_CFG_BASE,cfg_reg) = cfg_val;
+        UARTREG(s905_uart_base,S905_UART_IRQ_CONTROL) = temp2;
 
         register_int_handler(UART0_A0_INT, &uart_irq, (void *)3);
-        printf("gicd_cfg reg after = %08x\n",UARTREG(GIC_CFG_BASE,cfg_reg));
 
-
-
-
-
-        printf("UART CONTROL REG = %08x\n",UARTREG(s905_uart_base, UART_CONTROL));
-        printf("UART STATUS REG = %08x\n",UARTREG(s905_uart_base, UART_STATUS));
-        printf("UART IRG REG = %08x\n",UARTREG(s905_uart_base, UART_IRQ_CONTROL));
-        printf("UART REG REG = %08x\n",UARTREG(s905_uart_base, UART_REG5));
-        while ( (UARTREG(s905_uart_base, UART_STATUS)&0x0000000f) > 0 ) {
-            char c = UARTREG(s905_uart_base, UART_RFIFO);
-            printf(" %c",c);
-        }
-        printf("\n");
         initialized = true;
 
         // enable interrupt
         unmask_interrupt(UART0_A0_INT);
-
-#endif
 }
 
 /* panic-time getc/putc */
@@ -204,9 +168,9 @@ static int s905_uart_pputc(char c)
         return 0;
 
     /* spin while fifo is full */
-    while (UARTREG(s905_uart_base, UART_STATUS) & (1<<21))
+    while (UARTREG(s905_uart_base, S905_UART_STATUS) & (1<<21))
         ;
-    UARTREG(s905_uart_base, UART_WFIFO) = c;
+    UARTREG(s905_uart_base, S905_UART_WFIFO) = c;
 
     return 1;
 }
@@ -216,8 +180,8 @@ static int s905_uart_pgetc(void)
     if (!s905_uart_base)
         return 0;
 
-    if ((UARTREG(s905_uart_base, UART_STATUS) & (1<<20)) == 0) {
-        return UARTREG(s905_uart_base, UART_RFIFO);
+    if ((UARTREG(s905_uart_base, S905_UART_STATUS) & (1<<20)) == 0) {
+        return UARTREG(s905_uart_base, S905_UART_RFIFO);
     } else {
         return -1;
     }
@@ -230,35 +194,23 @@ static int s905_uart_putc(char c)
         return 0;
 
     /* spin while fifo is full */
-    while (UARTREG(s905_uart_base, UART_STATUS) & (1<<21))
+    while (UARTREG(s905_uart_base, S905_UART_STATUS) & (1<<21))
         ;
-    UARTREG(s905_uart_base, UART_WFIFO) = c;
+    UARTREG(s905_uart_base, S905_UART_WFIFO) = c;
 
     return 1;
 }
 
 static int s905_uart_getc(bool wait)
 {
-#if 0
-    cbuf_t *rxbuf = &uart_rx_buf[port];
-
-    char c;
-    if (cbuf_read_char(rxbuf, &c, wait) == 1) {
-        UARTREG(uart_to_ptr(port), UART_IMSC) = (1<<4); // rxim
-        return c;
-    }
-#endif
-
     if (!s905_uart_base)
         return -1;
 
     if (initialized) {
         // do cbuf stuff here
-
         char c;
         if (cbuf_read_char(&uart_rx_buf, &c, false) == 1)
             return c;
-
         return -1;
 
     } else {
@@ -266,9 +218,6 @@ static int s905_uart_getc(bool wait)
         return s905_uart_pgetc();
     }
 }
-
-
-
 
 static const struct pdev_uart_ops s905_uart_ops = {
     .putc = s905_uart_putc,
@@ -279,13 +228,6 @@ static const struct pdev_uart_ops s905_uart_ops = {
 
 static void s905_uart_init_early(mdi_node_ref_t* node, uint level)
 {
-#if 0
-    for (size_t i = 0; i < NUM_UART; i++) {
-        UARTREG(uart_to_ptr(i), UART_CR) = (1<<8)|(1<<0); // tx_enable, uarten
-    }
-#endif
-    if (!s905_uart_base)
-        sput("EEEERRRRRRRRRRRRRRRR",20);
     uint32_t port_val = 0;
 
     mdi_node_ref_t child;
@@ -299,7 +241,6 @@ static void s905_uart_init_early(mdi_node_ref_t* node, uint level)
     }
 
     s905_uart_base = uart_to_ptr(port_val);
-
     pdev_register_uart(&s905_uart_ops);
 }
 
