@@ -6,7 +6,7 @@
 # license that can be found in the LICENSE file or at
 # https://opensource.org/licenses/MIT
 
-BUILD_DIR=build-magenta-hikey960-arm64
+BUILD_DIR=../magenta/build-magenta-hikey960-arm64
 
 KERNEL=$BUILD_DIR/magenta.bin-dtb
 RAMDISK=$BUILD_DIR/bootdata.bin
@@ -25,9 +25,9 @@ CMDLINE="TERM=uart"
 # mkdtimg and mkbootimg can be found at:
 #  https://github.com/96boards-hikey/tools-images-hikey960/tree/master/build-from-source
 
-mkdtimg -c -d $DTB_FILE -o $DT_IMAGE || exit 1
+#mkdtimg -c -d $DTB_FILE -o $DT_IMAGE || exit 1
 
-mkbootimg --kernel $KERNEL \
+./tools-images-hikey960/build-from-source/mkbootimg --kernel $KERNEL \
 --kernel_offset $KERNEL_OFFSET \
 --base $MEMBASE \
 --ramdisk_offset $RAMDISK_OFFSET \
@@ -36,6 +36,5 @@ mkbootimg --kernel $KERNEL \
 --cmdline $CMDLINE \
 -o $OUT_IMAGE || exit 1
 
-fastboot flash dts $DT_IMAGE || exit 1
 fastboot flash boot $OUT_IMAGE || exit 1
 fastboot reboot || exit 1

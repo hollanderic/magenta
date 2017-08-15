@@ -47,12 +47,52 @@ FUNCTION_LABEL(_start)
 #include "fastboot-header.S"
 #endif
 FUNCTION(arm_reset)
+    movlit  x9, 0x5453595320494249
+    ldr     x10, [x1]
+    cmp     x9,x10
+    bne     .Lno_efi
+/* We were launched by EFI with x1 containing system table
+     mmu is on, dcache is on, icache is on
+*/
+    adrp   x2, _start
+    add    x2, x2, #:lo12:_start
+
+    stp     x29, x30, [sp, #-32]!
+    bl      efi_boot
+    mov     x20, x0
+    ldp     x29, x30, [sp], #32
+
+        /* Turn off Dcache and MMU */
+    mrs    x0, CurrentEL
+    cmp    x0, #0x04
+    b.ne    1f
+    mrs    x0, sctlr_el2
+    bic    x0, x0, #1 << 0    // clear SCTLR.M
+    bic    x0, x0, #1 << 2    // clear SCTLR.C
+    msr    sctlr_el2, x0
+    isb
+    b    2f
+1:
+    mrs    x0, sctlr_el1
+    bic    x0, x0, #1 << 0    // clear SCTLR.M
+    bic    x0, x0, #1 << 2    // clear SCTLR.C
+    msr    sctlr_el1, x0
+    isb
+2:
+    mov     x0, x20
+    mov     x1, xzr
+    mov     x2, xzr
+    mov     x3, xzr
+    movlit  x20, (MEMBASE + KERNEL_LOAD_OFFSET)
+    br      x20
+.Lno_efi:
     adrp    tmp, boot_structure_paddr
     adrp    tmp2, arch_boot_el
     mrs     x2, CurrentEL
     str     x0, [tmp, #:lo12:boot_structure_paddr]
     str     x2, [tmp2, #:lo12:arch_boot_el]
 
+    stp     x29, x30, [sp, #-32]!
     bl      arm64_elX_to_el1
     bl      arch_invalidate_cache_all
 

@@ -85,7 +85,8 @@ FUNCTION(arm64_elX_to_el1)
 .notEL1:
     cmp x9, #(0b10 << 2)
     beq .inEL2
-
+    movlit x0,0x03
+    ret
 
     /* set EL2 to 64bit */
     mrs x9, scr_el3
@@ -131,6 +132,23 @@ FUNCTION(arm64_elX_to_el1)
 .Ltarget:
     ret
 END_FUNCTION(arm64_elX_to_el1)
+
+FUNCTION(uart_out)
+    movlit    x20,0xfff32000
+uu:
+    str       w0, [x20]
+    b uu
+    ret
+END_FUNCTION(uart_out)
+
+
+FUNCTION(uart_out2)
+    movlit    x1,0xffffffffd7e32000
+uu2:
+    str       w0, [x1]
+    ret
+
+END_FUNCTION(uart_out2)
 
 FUNCTION(arm64_get_secondary_sp)
     mrs     x9, mpidr_el1

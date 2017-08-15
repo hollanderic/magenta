@@ -35,7 +35,7 @@ __BEGIN_CDECLS
     __asm__ volatile("msr " TOSTRING(reg) ", %0" :: "r" (_val)); \
     ISB; \
 })
-
+void uart_out2(uint32_t c);
 void arm64_context_switch(vaddr_t *old_sp, vaddr_t new_sp);
 void arm64_uspace_entry(uintptr_t arg1, uintptr_t arg2,
                         uintptr_t pc, uintptr_t sp,

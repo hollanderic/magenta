@@ -27,7 +27,7 @@
  * putc mechanism immediately instead of going through the debug log
  */
 #ifndef ENABLE_KERNEL_LL_DEBUG
-#define ENABLE_KERNEL_LL_DEBUG 0
+#define ENABLE_KERNEL_LL_DEBUG 1
 #endif
 
 /* routines for dealing with main console io */

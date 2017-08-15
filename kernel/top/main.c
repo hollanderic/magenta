@@ -39,35 +39,37 @@ static void call_constructors(void)
     for (void (*const *a)(void) = __init_array_start; a != __init_array_end; a++)
         (*a)();
 }
-
+extern void uart_out2(uint32_t c);
 /* called from arch code */
 void lk_main(void)
 {
+
+    uart_out2('A');
     // get us into some sort of thread context
     thread_init_early();
-
+    uart_out2('B');
     // deal with any static constructors
     call_constructors();
-
+    uart_out2('C');
     // early arch stuff
     lk_primary_cpu_init_level(LK_INIT_LEVEL_EARLIEST, LK_INIT_LEVEL_ARCH_EARLY - 1);
     arch_early_init();
-
+    uart_out2('D');
     // do any super early platform initialization
     lk_primary_cpu_init_level(LK_INIT_LEVEL_ARCH_EARLY, LK_INIT_LEVEL_PLATFORM_EARLY - 1);
     platform_early_init();
-
+    uart_out2('E');
     // do any super early target initialization
     lk_primary_cpu_init_level(LK_INIT_LEVEL_PLATFORM_EARLY, LK_INIT_LEVEL_TARGET_EARLY - 1);
     target_early_init();
-
+    uart_out2('F');
     dprintf(INFO, "\nwelcome to lk/MP\n\n");
 
     // bring up the kernel heap
     lk_primary_cpu_init_level(LK_INIT_LEVEL_TARGET_EARLY, LK_INIT_LEVEL_HEAP - 1);
     dprintf(SPEW, "initializing heap\n");
     heap_init();
-
+    uart_out2('G');
     // initialize the kernel
     lk_primary_cpu_init_level(LK_INIT_LEVEL_HEAP, LK_INIT_LEVEL_KERNEL - 1);
     kernel_init();

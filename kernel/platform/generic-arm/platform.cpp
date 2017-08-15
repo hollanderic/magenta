@@ -27,6 +27,7 @@
 
 #include <target.h>
 
+#include <arch/efi.h>
 #include <arch/mp.h>
 #include <arch/arm64/mp.h>
 #include <arch/arm64.h>
@@ -96,6 +97,33 @@ static pmm_arena_info_t arena = {
 
 static volatile int panic_started;
 
+#define UART_DR    (0x00)
+#define UART_TFR   (0x18)
+#define UARTREG(base, reg)  (*REG32((base)  + (reg)))
+#define uart_base (0xffffffffd7e32000)
+static int uart_pc(uint32_t c)
+{
+    /* spin while fifo is full */
+    while (UARTREG(uart_base, UART_TFR) & (1<<5))
+        ;
+    UARTREG(uart_base, UART_DR) = c;
+
+    return 1;
+}
+static void word_up(uint64_t numz){
+    for (int i = 0 ; i<16; i++) {
+        uint32_t c = (numz >>  (4*(16- i - 1))) & 0xf;
+        if (c < 10) {
+            c= c +(uint32_t)'0';
+        } else {
+            c= c - 10 + 'a';
+        }
+        uart_pc(c);
+    }
+    uart_pc('\r');
+    uart_pc('\n');
+}
+
 static void halt_other_cpus(void)
 {
     static volatile int halted = 0;
@@ -131,12 +159,17 @@ static void read_device_tree(void** ramdisk_base, size_t* ramdisk_size, size_t* 
     if (ramdisk_base) *ramdisk_base = nullptr;
     if (ramdisk_size) *ramdisk_size = 0;
     if (mem_size) *mem_size = 0;
-
+    printf("boot paddr structure = %lx\n",boot_structure_paddr);
     void* fdt = paddr_to_kvaddr(boot_structure_paddr);
     if (!fdt) {
         printf("%s: could not find device tree\n", __FUNCTION__);
         return;
     }
+
+    uint32_t* temp;
+    temp = (uint32_t*)fdt;
+    for (int i=0 ; i<128; i++)
+        printf("%x\n",temp[i]);
 
     if (fdt_check_header(fdt) < 0) {
         printf("%s fdt_check_header failed\n", __FUNCTION__);
@@ -148,7 +181,7 @@ static void read_device_tree(void** ramdisk_base, size_t* ramdisk_size, size_t* 
         printf("%s: fdt_path_offset(/chosen) failed\n", __FUNCTION__);
         return;
     }
-
+    dprintf(SPEW,"read device tree\n");
     int length;
     const char* bootargs =
         static_cast<const char*>(fdt_getprop(fdt, offset, "bootargs", &length));
@@ -172,6 +205,17 @@ static void read_device_tree(void** ramdisk_base, size_t* ramdisk_size, size_t* 
                 ramdisk_end_phys = fdt32_to_cpu(*(uint32_t *)ptr);
             } else if (length == 8) {
                 ramdisk_end_phys = fdt64_to_cpu(*(uint64_t *)ptr);
+            }
+        }
+        // Some bootloaders pass initrd via cmdline, lets look there
+        //  if we haven't found it yet.
+        if (!(ramdisk_start_phys && ramdisk_end_phys)) {
+            const char* value = cmdline_get("initrd");
+            if (value != NULL) {
+                char* endptr;
+                ramdisk_start_phys = strtoll(value,&endptr,16);
+                endptr++; //skip the comma
+                ramdisk_end_phys = strtoll(endptr,NULL,16) + ramdisk_start_phys;
             }
         }
 
@@ -409,6 +453,15 @@ static void platform_cpu_init(void) {
     }
 }
 
+static inline bool is_magenta_boot_header(void* addr) {
+    DEBUG_ASSERT(addr);
+
+    efi_magenta_hdr_t* header = (efi_magenta_hdr_t*)addr;
+
+
+    return header->magic == EFI_MAGENTA_MAGIC;
+}
+
 static inline bool is_bootdata_container(void* addr) {
     DEBUG_ASSERT(addr);
 
@@ -476,36 +529,49 @@ static void process_bootdata(bootdata_t* root) {
     DEBUG_ASSERT(root);
 
     if (root->type != BOOTDATA_CONTAINER) {
+        uart_pc('p');
         printf("bootdata: invalid type = %08x\n", root->type);
         return;
     }
 
     if (root->extra != BOOTDATA_MAGIC) {
+        uart_pc('P');
         printf("bootdata: invalid magic = %08x\n", root->extra);
         return;
     }
-
+ /*   uint64_t *tester = (uint64_t*)root;
+    for (uint i=0; i<((root->length)/8); i=i+128) {
+        word_up(i);
+        word_up(tester[i]);
+    }
+*/
     bool mdi_found = false;
     size_t offset = sizeof(bootdata_t);
     const size_t length = (root->length);
-
     while (offset < length) {
+
         uintptr_t ptr = reinterpret_cast<const uintptr_t>(root);
         bootdata_t* section = reinterpret_cast<bootdata_t*>(ptr + offset);
-
+        //uart_pc('s');
+        //word_up((uint64_t)section);
+        //uart_pc('t');
+        //word_up(section->type);
         const uint32_t type = process_bootsection(section);
         if (BOOTDATA_MDI == type) {
             mdi_found = true;
         }
 
         offset += BOOTDATA_ALIGN(sizeof(*section) + section->length);
+        //uart_pc('o');
+        //word_up(offset);
+        //uart_pc('\n');
     }
 
     if (!mdi_found) {
+        uart_pc('^');
         panic("No MDI found in ramdisk\n");
     }
 }
-
 extern int _end;
 void platform_early_init(void)
 {
@@ -517,9 +583,10 @@ void platform_early_init(void)
 
     void* boot_structure_kvaddr = paddr_to_kvaddr(boot_structure_paddr);
     if (!boot_structure_kvaddr) {
+        uart_pc('!');
         panic("no bootdata structure!\n");
     }
-
+    uart_pc('1');
     // The previous environment passes us a boot structure. It may be a
     // device tree or a bootdata container. We attempt to detect the type of the
     // container and handle it appropriately.
@@ -528,7 +595,22 @@ void platform_early_init(void)
         // We leave out arena size for now
         ramdisk_from_bootdata_container(boot_structure_kvaddr, &ramdisk_base,
                                         &ramdisk_size);
+    } else if (is_magenta_boot_header(boot_structure_kvaddr)) {
+        uart_pc('Y');
+            efi_magenta_hdr_t *hdr = (efi_magenta_hdr_t*)boot_structure_kvaddr;
+            cmdline_append(hdr->cmd_line);
+            const char* value = cmdline_get("initrd");
+            if (value != NULL) {
+                char* endptr;
+                ramdisk_start_phys = strtoll(value,&endptr,16);
+                endptr++; //skip the comma
+                ramdisk_size = strtoll(endptr,NULL,16);
+                ramdisk_end_phys = ramdisk_start_phys + ramdisk_size;
+                ramdisk_base =  paddr_to_kvaddr(ramdisk_start_phys);
+            }
+
     } else {
+        uart_pc('N');
         // on qemu we read arena size from the device tree
         read_device_tree(&ramdisk_base, &ramdisk_size, &arena_size);
         // Some legacy bootloaders do not properly set linux,initrd-end
@@ -539,11 +621,12 @@ void platform_early_init(void)
     }
 
     if (!ramdisk_base || !ramdisk_size) {
+        uart_pc('P');
         panic("no ramdisk!\n");
     }
-
+    uart_pc('G');
     process_bootdata(reinterpret_cast<bootdata_t*>(ramdisk_base));
-
+    uart_pc('g');
     // Read cmdline after processing bootdata, which may contain cmdline data.
     halt_on_panic = cmdline_get_bool("kernel.halt_on_panic", false);
 
@@ -579,6 +662,7 @@ void platform_early_init(void)
 #endif
 
     platform_preserve_ramdisk();
+    uart_pc('~');
 }
 
 void platform_init(void)
@@ -592,8 +676,10 @@ void platform_dputs(const char* str, size_t len)
         char c = *str++;
         if (c == '\n') {
             uart_putc('\r');
+            uart_pc('\r');
         }
         uart_putc(c);
+        uart_pc(c);
     }
 }
 
@@ -606,9 +692,11 @@ int platform_dgetc(char *c, bool wait)
     return 0;
 }
 
+
 void platform_pputc(char c)
 {
     uart_pputc(c);
+    uart_pc(c);
 }
 
 int platform_pgetc(char *c, bool wait)

@@ -1,0 +1,21 @@
+
+
+BUILD_PATH=`pwd`
+
+echo ${BUILD_PATH}
+
+BUILD_OPTION=DEBUG
+
+export AARCH64_TOOLCHAIN=GCC49
+
+export UEFI_TOOLS_DIR=${BUILD_PATH}/uefi-tools
+
+export EDK2_DIR=${BUILD_PATH}/edk2
+
+export EDK2_OUTPUT_DIR=${EDK2_DIR}/Build/HiKey960/${BUILD_OPTION}_${AARCH64_TOOLCHAIN}
+
+fastboot flash ptable ./l-loader/prm_ptable.img
+fastboot flash xloader ./tools-images-hikey960/sec_xloader.img
+fastboot flash fastboot ./tools-images-hikey960/l-loader.bin
+fastboot flash fip ./edk2/Build/HiKey960/DEBUG_GCC49/FV/fip.bin
+
