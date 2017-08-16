@@ -15,6 +15,7 @@
 #include <bits.h>
 #include <kernel/cmdline.h>
 #include <kernel/thread.h>
+#include <kernel/vm.h>
 #include <lk/init.h>
 #include <lk/main.h>
 #include <magenta/errors.h>
@@ -94,14 +95,14 @@ static int efi_pgetc(void)
 {
        return -1;
 }
-
+/*
 static const struct pdev_uart_ops uart_ops = {
     .putc = efi_putc,
     .getc = efi_getc,
     .pputc = efi_putc,
     .pgetc = efi_pgetc,
 };
-
+*/
 
 static void efi_print(efi_system_table_t *sys_table_arg, const char *str)
 {
@@ -162,10 +163,7 @@ uint64_t efi_boot(void* handle, efi_system_table_t *systable, paddr_t image_addr
 	efi_guid_t loaded_image_proto = LOADED_IMAGE_PROTOCOL_GUID;
 
     sys_table = systable;
-        pdev_register_uart(&uart_ops);
-
-
-	efi_printhex(systable,"image addr :",(void*)image_addr);
+        //pdev_register_uart(&uart_ops);
 
 	efi_print(systable,"Booting Magenta from EFI loader...\n");
 
@@ -175,33 +173,16 @@ uint64_t efi_boot(void* handle, efi_system_table_t *systable, paddr_t image_addr
 		efi_print(systable, "Failed to get loaded image protocol\n");
 		goto fail;
 	}
-	efi_printhex(systable,"image :",image);
-    efi_printhex(systable,"image-base :",image->image_base);
-    efi_printhex(systable,"image-size :",(void*)image->image_size);
-
-	struct efi_simple_text_output_protocol *out;
-	out = (struct efi_simple_text_output_protocol *)systable->con_out;
-	out->output_string(out, image->load_options);
-	efi_print(systable,"\n");
 
     char buff[256];
     snprintf(buff,256,"in length =%u    ascii=%u\n",image->load_options_size,
                                 efi_utf16_ascii_len(image->load_options,image->load_options_size/2));
     efi_print(systable,buff);
-/*
-	struct file_info *files;
-	status = systable->boottime->allocate_pool(EFI_LOADER_DATA, sizeof(*files), (void **)&files);
-	if (status != EFI_SUCCESS) {
-		efi_print(systable, "Failed to allocate space for file_info\n");
-		goto fail;
-	}
-*/
+
+
 	// Allocate space for new kernel location (+bss)
 	uint64_t kern_pages = (uint64_t)&_end - (uint64_t)&_start;
 	kern_pages = ROUNDUP(kern_pages, EFI_ALLOC_ALIGN) / EFI_PAGE_SIZE;
-	//efi_printhex(systable,"_start :",(void*)&_start);
-	//efi_printhex(systable,"_end :",(void*)&_end);
-	//efi_printhex(systable,"kern_pages :",(void*)kern_pages);
 	efi_physical_addr_t target_addr = MEMBASE + KERNEL_LOAD_OFFSET;
 	status = systable->boottime->allocate_pages( EFI_ALLOCATE_ADDRESS,
 	                                             EFI_LOADER_DATA,
@@ -216,54 +197,6 @@ uint64_t efi_boot(void* handle, efi_system_table_t *systable, paddr_t image_addr
 	memcpy((void*)target_addr,(void*)image_addr,kern_pages*EFI_PAGE_SIZE);
 
 
-
-
-	//snprintf(buff,256,"target addr =0x%lx\n",target_addr);
-	//efi_print(systable,buff);
-
-	//uint32_t *checkup = (uint32_t*)target_addr;
-	//for (int i = 0; i<20; i++)
-	//	efi_printhex(systable,"mem:",(void*)(uint64_t)checkup[i]);
-
-
-
-	// find the fdt in image (does it need to be relocated?)
-	//uint16_t tempchars[2] = {0};
-    /*
-	efi_guid_t fdt_guid = DEVICE_TREE_GUID;
-	efi_config_table_t *tables = (efi_config_table_t *) systable->tables;
-	uint32_t *fdt=0;
-	for (uint i=0; i <  systable->nr_tables; i++) {
-		if (!memcmp((char*)(&tables[i].guid), (char*)&fdt_guid,16 )) {
-			fdt = (uint32_t*)tables[i].table;
-			efi_print(systable,"found fdt");
-		}
-		for (int j=0; j<16; j++) {
-			snprintf(buff,256,"%02x",((uint8_t*)(&tables[i].guid))[j]);
-			efi_print(systable,buff);
-			//out->output_string(out,tempchars);
-		}
-		efi_print(systable,"\n");
-	}
-
-	int offset = fdt_path_offset(fdt, "/chosen");
-    if (offset < 0) {
-        efi_print(systable,"couldn't parse fdt\n");
-        return 0;
-    }
-
-    int length;
-    const char* bootargs = fdt_getprop(fdt,offset, "bootargs",&length);
-    if (bootargs) {
-        efi_print(systable,bootargs);
-        efi_print(systable,"\n");
-
-    } else {
-        efi_print(systable,"Could not find bootargs\n");
-    }
-*/
-    //allocate one page for the magenta boot args
-    //efi_physical_addr_t args_addr;
     efi_magenta_hdr_t *mag_hdr;
 
     uint32_t cmd_line_len = efi_utf16_ascii_len(image->load_options,image->load_options_size/2) + 1;
@@ -298,51 +231,40 @@ uint64_t efi_boot(void* handle, efi_system_table_t *systable, paddr_t image_addr
     }
     efi_printhex(systable,"initrd-start",(void*)initrd_start_phys);
     efi_printhex(systable,"initrd-size",(void*)initrd_size);
-    //cmdline_append(mag_hdr->cmd_line);
-    //cmdline_append("initrd=56,44");
-    //e_print("cmdline appended\n");
-/*
-    uint64_t initrd_start_phys=0;
-    uint64_t initrd_size=0;
-    const char* value = cmdline_get("initrd");
-    e_print("did get\n");
 
-    if (value != NULL) {
-        char* endptr;
-        initrd_start_phys = strtoll(value,&endptr,16);
-        endptr++; //skip the comma
-        initrd_size = strtoll(endptr,NULL,16);
-    }
-*/
+
     if (initrd_start_phys && initrd_size) {
+    	uint64_t ramdisk_pages = ROUNDUP_PAGE_SIZE(initrd_size) / PAGE_SIZE;
+    	/* TODO - pull this from boot image header */
+    	efi_physical_addr_t ramdisk_target_addr = 0x07c00000;
 
-        arch_sync_cache_range((addr_t)initrd_start_phys,initrd_size);
+		status = systable->boottime->allocate_pages( EFI_ALLOCATE_ADDRESS,
+		                                             EFI_LOADER_DATA,
+		                                             ramdisk_pages,
+		                                             &ramdisk_target_addr);
+		if (status != EFI_SUCCESS) {
+			efi_print(systable, "Failed to allocate space for ramdisk\n");
+			goto fail;
+		}
+		mag_hdr->ramdisk_base_phys = (uint64_t)ramdisk_target_addr;
+		mag_hdr->ramdisk_size = (uint64_t)ROUNDUP_PAGE_SIZE(initrd_size);
+
+		// Copy kernel to new location
+		memcpy((void*)ramdisk_target_addr,
+			   (void*)initrd_start_phys,initrd_size);
+
+        arch_sync_cache_range((addr_t)ramdisk_target_addr,initrd_size);
         e_print("initrd found and flushed from cache...\n");
     } else {
         e_print("initrd not found!!!!!\n");
+        goto fail;
     }
-
 
     // sync cache (we jumped here with mmu on w/ identity and cache on)
     arch_sync_cache_range((addr_t)target_addr, kern_pages*EFI_PAGE_SIZE);
     arch_sync_cache_range((addr_t)mag_hdr, sizeof(*mag_hdr) + cmd_line_len);
-/*
-    for (uint64_t i=initrd_start_phys; i < (initrd_start_phys+initrd_size); i=i+1024) {
-        snprintf(buff,256,"%08lx  -  %016lx\n",i,*(uint64_t*)(i));
-        efi_print(systable,buff);
-    }
-*/
-
-    e_print("yo dawg, here we go\n");
 
 	return (uint64_t)mag_hdr;
-
-	// shut down mmu/cache
-
-	// jump to hyperspace
-
-
-	//return 0xb00beee5;
 
 fail:
 	return 0xdeadbeef;

@@ -86,13 +86,13 @@ FUNCTION(arm_reset)
     movlit  x20, (MEMBASE + KERNEL_LOAD_OFFSET)
     br      x20
 .Lno_efi:
+
     adrp    tmp, boot_structure_paddr
     adrp    tmp2, arch_boot_el
     mrs     x2, CurrentEL
     str     x0, [tmp, #:lo12:boot_structure_paddr]
     str     x2, [tmp2, #:lo12:arch_boot_el]
 
-    stp     x29, x30, [sp, #-32]!
     bl      arm64_elX_to_el1
     bl      arch_invalidate_cache_all
 

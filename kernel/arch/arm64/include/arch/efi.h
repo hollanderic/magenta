@@ -29,6 +29,8 @@ typedef void *efi_handle_t;
 
 typedef struct {
 	uint64_t magic;
+	uint64_t ramdisk_base_phys;
+	uint64_t ramdisk_size;
 	uint32_t cmd_line_len;
 	char 	 cmd_line[];
 } efi_magenta_hdr_t;

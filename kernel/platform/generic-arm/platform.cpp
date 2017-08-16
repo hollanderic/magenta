@@ -426,7 +426,8 @@ static void platform_start_cpu(uint cluster, uint cpu) {
     arch_clean_cache_range(0xffff000000000000,256);     // clean out all the VC bootstrap area
     __asm__ __volatile__("sev");                        //  where the entry vectors live.
 #else
-    psci_cpu_on(cluster, cpu, MEMBASE + KERNEL_LOAD_OFFSET);
+      printf("Trying to start cpu%u returned: %x\n",cpu, psci_cpu_on(cluster, cpu, MEMBASE + KERNEL_LOAD_OFFSET));
+    //while (1);;
 #endif
 }
 
@@ -599,6 +600,11 @@ void platform_early_init(void)
         uart_pc('Y');
             efi_magenta_hdr_t *hdr = (efi_magenta_hdr_t*)boot_structure_kvaddr;
             cmdline_append(hdr->cmd_line);
+            ramdisk_start_phys = hdr->ramdisk_base_phys;
+            ramdisk_size = hdr->ramdisk_size;
+            ramdisk_end_phys = ramdisk_start_phys + ramdisk_size;
+            ramdisk_base =  paddr_to_kvaddr(ramdisk_start_phys);
+/*
             const char* value = cmdline_get("initrd");
             if (value != NULL) {
                 char* endptr;
@@ -608,6 +614,7 @@ void platform_early_init(void)
                 ramdisk_end_phys = ramdisk_start_phys + ramdisk_size;
                 ramdisk_base =  paddr_to_kvaddr(ramdisk_start_phys);
             }
+*/
 
     } else {
         uart_pc('N');
@@ -676,10 +683,10 @@ void platform_dputs(const char* str, size_t len)
         char c = *str++;
         if (c == '\n') {
             uart_putc('\r');
-            uart_pc('\r');
+            //uart_pc('\r');
         }
         uart_putc(c);
-        uart_pc(c);
+        //uart_pc(c);
     }
 }
 
@@ -696,7 +703,7 @@ int platform_dgetc(char *c, bool wait)
 void platform_pputc(char c)
 {
     uart_pputc(c);
-    uart_pc(c);
+    //uart_pc(c);
 }
 
 int platform_pgetc(char *c, bool wait)
