@@ -68,6 +68,11 @@ static zx_status_t a113_bus_bind(void* ctx, zx_device_t* parent, void** cookie) 
     intf.ctx = bus;
     pbus_set_interface(&bus->pbus, &intf);
 
+    // Initialize Pin mux subsystem.
+    a113_init_pinmux(bus);
+    a113_config_pinmux(bus, A113_GPIOAO(0), 0);
+    a113_config_pinmux(bus, A113_GPIOAO(1), 0);
+
     return ZX_OK;
 
 fail:
