@@ -21,6 +21,8 @@
 #include <zircon/assert.h>
 
 #include "a113-bus.h"
+#include "aml-i2c.h"
+
 
 static zx_status_t a113_bus_get_protocol(void* ctx, uint32_t proto_id, void* out) {
     return ZX_ERR_NOT_SUPPORTED;
@@ -72,6 +74,39 @@ static zx_status_t a113_bus_bind(void* ctx, zx_device_t* parent, void** cookie) 
     a113_init_pinmux(bus);
     a113_config_pinmux(bus, A113_GPIOAO(0), 0);
     a113_config_pinmux(bus, A113_GPIOAO(1), 0);
+
+//GPIOZ 8,9 ->config to I2C_B
+    printf("A113: setting pinmux for i2c-b\n");
+    a113_config_pinmux(bus, A113_GPIOZ(8), 1);
+    a113_config_pinmux(bus, A113_GPIOZ(9), 1);
+
+
+    aml_i2c_dev_t *i2cb_dev;
+
+    status = aml_i2c_init(&i2cb_dev, bus, AML_I2C_B);
+    if (status != ZX_OK) {
+        printf("Could not initialize i2c device!\n");
+    }
+
+    aml_i2c_dumpstate(i2cb_dev);
+/*
+    printf("A113: register block base address (virt) = %p\n",reg);
+    printf("A113: register block base address (phys) = %lx\nsize=%lu\n",bus->i2c_b_regs.phys,
+                                                                        bus->i2c_b_regs.size);
+    reg[0] = reg[0] |  (1 << 22);
+    reg[0] = reg[0] & ~(3 << 23);
+
+    printf("A113: regs[0] - 0x%08x\n",reg[0]);
+    printf("A113: regs[1] - 0x%08x\n",reg[1]);
+    printf("A113: regs[2] - 0x%08x\n",reg[2]);
+    printf("A113: regs[3] - 0x%08x\n",reg[3]);
+
+*/
+
+
+
+
+
 
     return ZX_OK;
 

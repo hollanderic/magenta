@@ -186,8 +186,8 @@ zx_status_t a113_config_pinmux(void* ctx, const uint32_t pin, const uint32_t fn)
     volatile uint32_t* reg = (uint32_t*)(io_buffer_virt(&bus->periphs_reg) + register_offset);
 
     const uint32_t pin_offset = pin - block->start_pin;
-    const uint32_t mux_mask = ~(0xf << pin_offset);
-    const uint32_t fn_val = fn << pin_offset;
+    const uint32_t mux_mask = ~(0xf << (pin_offset*4));
+    const uint32_t fn_val = fn << (pin_offset*4);
 
     mtx_lock(&block->lock);
 

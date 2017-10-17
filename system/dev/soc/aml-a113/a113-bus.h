@@ -24,6 +24,7 @@
 typedef struct {
     platform_bus_protocol_t pbus;
     io_buffer_t periphs_reg;
+    io_buffer_t i2c_b_regs;
     // more coming soon
 } a113_bus_t;
 
