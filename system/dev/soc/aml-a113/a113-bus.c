@@ -87,8 +87,10 @@ static zx_status_t a113_bus_bind(void* ctx, zx_device_t* parent, void** cookie) 
     if (status != ZX_OK) {
         printf("Could not initialize i2c device!\n");
     }
-
+    //aml_i2c_set_slave_addr(i2cb_dev,0x18);
     aml_i2c_dumpstate(i2cb_dev);
+
+    //aml_i2c_write(i2cb_dev, NULL, 2);
 /*
     printf("A113: register block base address (virt) = %p\n",reg);
     printf("A113: register block base address (phys) = %lx\nsize=%lu\n",bus->i2c_b_regs.phys,
@@ -103,7 +105,7 @@ static zx_status_t a113_bus_bind(void* ctx, zx_device_t* parent, void** cookie) 
 
 */
 
-
+    aml_i2c_test(i2cb_dev);
 
 
 
