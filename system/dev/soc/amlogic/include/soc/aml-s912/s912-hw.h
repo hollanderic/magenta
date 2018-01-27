@@ -7,6 +7,12 @@
 // DMC registers
 #define DMC_REG_BASE        0xc8838000
 
+#define PERIPHS_REG_BASE        (0xc8834000)
+#define PERIPHS_REG_SIZE        (0x2000)
+
+#define ETH_MAC_REG_BASE         (0xc9410000)
+#define ETH_MAC_REG_SIZE         (0x00010000)
+
 #define DMC_CAV_LUT_DATAL           (0x12 << 2)
 #define DMC_CAV_LUT_DATAH           (0x13 << 2)
 #define DC_CAV_LUT_ADDR             (0x14 << 2)

@@ -43,6 +43,26 @@ static const pbus_dev_t display_dev = {
     .mmio_count = countof(vim_display_mmios),
 };
 
+static const pbus_mmio_t vim2_eth_mmios[] = {
+    {
+        .base   = PERIPHS_REG_BASE,
+        .length = PERIPHS_REG_SIZE,
+    },
+    {
+        .base   = ETH_MAC_REG_BASE,
+        .length = ETH_MAC_REG_SIZE,
+    }
+};
+
+static pbus_dev_t eth_dev = {
+    .name = "ethernet",
+    .vid = PDEV_VID_KHADAS,
+    .pid = PDEV_PID_VIM2,
+    .did = PDEV_DID_AMLOGIC_ETH,
+    .mmios = vim2_eth_mmios,
+    .mmio_count = countof(vim2_eth_mmios),
+};
+
 static void vim_bus_release(void* ctx) {
     vim_bus_t* bus = ctx;
     free(bus);
@@ -123,6 +143,12 @@ static zx_status_t vim_bus_bind(void* ctx, zx_device_t* parent) {
     if (thrd_rc != thrd_success) {
         goto fail;
     }
+
+    if ((status = pbus_device_add(&bus->pbus, &eth_dev, 0)) != ZX_OK) {
+        zxlogf(ERROR, "vim init could not add eth_dev: %d\n", status);
+        return status;
+    }
+
     return ZX_OK;
 
 fail:
