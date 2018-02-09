@@ -41,7 +41,7 @@ class AmlDWMacDevice : public ddk::Device<AmlDWMacDevice, ddk::Unbindable>,
     //zx_status_t UpdateLinkStatus(zx_signals_t observed);
     //zx_status_t Recv(uint8_t* buffer, uint32_t capacity);
 
-    // designworks mac options
+    // designware mac options
     uint32_t options_ = 0;
 
     // ethermac fields
@@ -50,10 +50,14 @@ class AmlDWMacDevice : public ddk::Device<AmlDWMacDevice, ddk::Unbindable>,
     uint8_t mac_[6] = {};
 
     platform_device_protocol_t pdev_;
-    void* regs_;
-    size_t regs_size_;
-    zx::vmo regs_vmo_;
 
+    zx_vaddr_t periph_regs_;
+    size_t periph_regs_size_;
+    zx::vmo periph_regs_vmo_;
+
+    zx_vaddr_t dwmac_regs_;
+    size_t dwmac_regs_size_;
+    zx::vmo dwmac_regs_vmo_;
 
     fbl::Mutex lock_;
     fbl::unique_ptr<ddk::EthmacIfcProxy> ethmac_proxy_ __TA_GUARDED(lock_);

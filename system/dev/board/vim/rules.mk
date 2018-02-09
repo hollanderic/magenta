@@ -13,6 +13,7 @@ MODULE_SRCS += \
     $(LOCAL_DIR)/vim-gpio.c \
     $(LOCAL_DIR)/vim-i2c.c \
     $(LOCAL_DIR)/vim-usb.c \
+    $(LOCAL_DIR)/vim-eth.c \
 
 MODULE_STATIC_LIBS := \
     system/ulib/ddk \

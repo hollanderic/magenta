@@ -12,6 +12,9 @@ MODULE_SRCS := \
     $(LOCAL_DIR)/binding.c \
     $(LOCAL_DIR)/aml-dwmac.cpp
 
+MODULE_HEADER_DEPS := \
+    system/dev/soc/amlogic
+
 MODULE_STATIC_LIBS := \
     system/ulib/ddk \
     system/ulib/ddktl \

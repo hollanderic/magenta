@@ -11,6 +11,9 @@
 #include <pretty/hexdump.h>
 #include <zircon/compiler.h>
 
+#include <soc/aml-s912/s912-hw.h>
+
+
 #include <stdio.h>
 #include <string.h>
 
@@ -38,20 +41,33 @@ zx_status_t AmlDWMacDevice::Create(zx_device_t* device){
         zxlogf(INFO,"aml-dwmac: Added AmLogic dwMac device\n");
     }
 
-    status = pdev_map_mmio(&mac_device->pdev_, 0, ZX_CACHE_POLICY_UNCACHED_DEVICE,
-                        &mac_device->regs_, &mac_device->regs_size_,
-                        mac_device->regs_vmo_.reset_and_get_address());
+    status = pdev_map_mmio(&mac_device->pdev_, 0,
+                            ZX_CACHE_POLICY_UNCACHED_DEVICE,
+                            (void**)&mac_device->periph_regs_,
+                            &mac_device->periph_regs_size_,
+                            mac_device->periph_regs_vmo_.reset_and_get_address());
     if (status != ZX_OK) {
-        zxlogf(ERROR,"aml-dwmac: could not map mmio: %d\n",status);
+        zxlogf(ERROR,"aml-dwmac: could not map periph mmio: %d\n",status);
         return res;
     }
-#if 1
-
-    uint32_t* tmp = (uint32_t*)mac_device->regs_;
-
-    for(uint32_t i = 0; i < 0x20; i++) {
-        printf("%08x:  %08x\n",i*4,tmp[0x540/4 + i]);
+    status = pdev_map_mmio(&mac_device->pdev_, 1,
+                            ZX_CACHE_POLICY_UNCACHED_DEVICE,
+                            (void**)&mac_device->dwmac_regs_,
+                            &mac_device->dwmac_regs_size_,
+                            mac_device->dwmac_regs_vmo_.reset_and_get_address());
+    if (status != ZX_OK) {
+        zxlogf(ERROR,"aml-dwmac: could not map dwmac mmio: %d\n",status);
+        return res;
     }
+
+#if 1
+#define PREG(offs)  (*(uint32_t*)(mac_device->periph_regs_ + offs))
+    printf("PER_ETH_REG0 %08x\n",PREG(PER_ETH_REG0));
+    printf("PER_ETH_REG1 %08x\n",PREG(PER_ETH_REG1));
+    printf("PER_ETH_REG2 %08x\n",PREG(PER_ETH_REG2));
+    printf("PER_ETH_REG3 %08x\n",PREG(PER_ETH_REG3));
+    printf("PER_ETH_REG4 %08x\n",PREG(PER_ETH_REG4));
+#undef PREG
 #endif
     __UNUSED auto ptr = mac_device.release();
     return ZX_OK;

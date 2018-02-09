@@ -26,3 +26,6 @@ zx_status_t vim_i2c_init(vim_bus_t* bus);
 
 // vim-usb.c
 zx_status_t vim_usb_init(vim_bus_t* bus);
+
+// vim-eth.c
+zx_status_t vim_eth_init(vim_bus_t* bus);
