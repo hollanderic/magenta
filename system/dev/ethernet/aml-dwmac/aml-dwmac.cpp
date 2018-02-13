@@ -8,6 +8,7 @@
 #include <fbl/auto_lock.h>
 #include <fbl/type_support.h>
 #include <fbl/ref_ptr.h>
+#include <hw/reg.h>
 #include <pretty/hexdump.h>
 #include <zircon/compiler.h>
 
@@ -20,26 +21,38 @@
 #include "aml-dwmac.h"
 namespace eth {
 
+enum {
+    MAC_RESET,
+    MAC_INTR,
+};
+
 //static
 zx_status_t AmlDWMacDevice::Create(zx_device_t* device){
 
     auto mac_device = fbl::unique_ptr<eth::AmlDWMacDevice>(
         new eth::AmlDWMacDevice(device));
 
-    zx_status_t res = device_get_protocol(mac_device->parent_,
+    zx_status_t status = device_get_protocol(mac_device->parent_,
                                             ZX_PROTOCOL_PLATFORM_DEV,
                                             &mac_device->pdev_);
-    if (res != ZX_OK) {
-        return res;
+    if (status != ZX_OK) {
+        return status;
     }
 
-    zx_status_t status = mac_device->DdkAdd("AmLogic dwMac");
+    status = mac_device->DdkAdd("AmLogic dwMac");
     if (status != ZX_OK) {
         zxlogf(ERROR, "aml-dwmac: Could not create eth device: %d\n", status);
     } else {
         //mac_device.release(); //release the reference so object persists
         zxlogf(INFO,"aml-dwmac: Added AmLogic dwMac device\n");
     }
+
+    status = device_get_protocol(mac_device->parent_, ZX_PROTOCOL_GPIO, &mac_device->gpio_);
+    if (status != ZX_OK) {
+        return status;
+    }
+
+    gpio_config(&mac_device->gpio_, MAC_RESET, GPIO_DIR_OUT);
 
     status = pdev_map_mmio(&mac_device->pdev_, 0,
                             ZX_CACHE_POLICY_UNCACHED_DEVICE,
@@ -48,7 +61,7 @@ zx_status_t AmlDWMacDevice::Create(zx_device_t* device){
                             mac_device->periph_regs_vmo_.reset_and_get_address());
     if (status != ZX_OK) {
         zxlogf(ERROR,"aml-dwmac: could not map periph mmio: %d\n",status);
-        return res;
+        return status;
     }
     status = pdev_map_mmio(&mac_device->pdev_, 1,
                             ZX_CACHE_POLICY_UNCACHED_DEVICE,
@@ -57,8 +70,34 @@ zx_status_t AmlDWMacDevice::Create(zx_device_t* device){
                             mac_device->dwmac_regs_vmo_.reset_and_get_address());
     if (status != ZX_OK) {
         zxlogf(ERROR,"aml-dwmac: could not map dwmac mmio: %d\n",status);
-        return res;
+        return status;
     }
+
+
+    status = pdev_map_mmio(&mac_device->pdev_, 2,
+                            ZX_CACHE_POLICY_UNCACHED_DEVICE,
+                            (void**)&mac_device->hhi_regs_,
+                            &mac_device->hhi_regs_size_,
+                            mac_device->hhi_regs_vmo_.reset_and_get_address());
+    if (status != ZX_OK) {
+        zxlogf(ERROR,"aml-dwmac: could not map hiu mmio: %d\n",status);
+        return status;
+    }
+
+    writel( ETH_REG0_RGMII_SEL |
+            (1 << ETH_REG0_TX_CLK_PH_POS) |
+            (4 << ETH_REG0_TX_CLK_RATIO_POS) |
+            ETH_REG0_REF_CLK_ENA |
+            ETH_REG0_CLK_ENA,
+            mac_device->periph_regs_ + PER_ETH_REG0);
+
+    set_bitsl( 1 << 3, mac_device->hhi_regs_ + HHI_GCLK_MPEG1);
+    clr_bitsl( (1 << 3) | (1<<2) , mac_device->hhi_regs_ +  HHI_MEM_PD_REG0);
+
+    gpio_write(&mac_device->gpio_, MAC_RESET, 0);
+    zx_nanosleep(zx_deadline_after(ZX_MSEC(10)));
+    gpio_write(&mac_device->gpio_, MAC_RESET, 1);
+    zx_nanosleep(zx_deadline_after(ZX_MSEC(10)));
 
 #if 1
 #define PREG(offs)  (*(uint32_t*)(mac_device->periph_regs_ + offs))
@@ -67,10 +106,60 @@ zx_status_t AmlDWMacDevice::Create(zx_device_t* device){
     printf("PER_ETH_REG2 %08x\n",PREG(PER_ETH_REG2));
     printf("PER_ETH_REG3 %08x\n",PREG(PER_ETH_REG3));
     printf("PER_ETH_REG4 %08x\n",PREG(PER_ETH_REG4));
+    uint32_t val;
+    for (uint32_t i=0; i<31; i++) {
+        if (mac_device->MDIORead(i,&val)==ZX_OK) {
+            printf("MII%02u = %04x\n",i,val);
+        } else {
+            printf("MDIO READ TIMEOUT%u\n",i);
+        }
+    }
+
 #undef PREG
 #endif
     __UNUSED auto ptr = mac_device.release();
     return ZX_OK;
+}
+
+zx_status_t AmlDWMacDevice::MDIOWrite(uint32_t reg, uint32_t val){
+
+    writel(val, &dwmac_regs_->miidata);
+
+    uint32_t miiaddr = (mii_addr_ << MIIADDRSHIFT) |
+                       (reg << MIIREGSHIFT) |
+                       MII_WRITE;
+
+    writel( miiaddr | MII_CLKRANGE_150_250M | MII_BUSY,
+            &dwmac_regs_->miiaddr);
+
+
+    zx_time_t deadline = zx_deadline_after(ZX_MSEC(3));
+    while (zx_clock_get(ZX_CLOCK_MONOTONIC) < deadline) {
+        if (!(readl(&dwmac_regs_->miiaddr) & MII_BUSY )) {
+            return ZX_OK;
+        }
+        zx_nanosleep(zx_deadline_after(ZX_USEC(10)));
+    }
+    return ZX_ERR_TIMED_OUT;
+}
+
+
+zx_status_t AmlDWMacDevice::MDIORead(uint32_t reg, uint32_t* val){
+
+    uint32_t miiaddr = (mii_addr_ << MIIADDRSHIFT) |
+                       (reg << MIIREGSHIFT);
+
+    writel(miiaddr | MII_CLKRANGE_150_250M | MII_BUSY, &dwmac_regs_->miiaddr);
+
+    zx_time_t deadline = zx_deadline_after(ZX_MSEC(3));
+    while (zx_clock_get(ZX_CLOCK_MONOTONIC) < deadline) {
+        if (!(readl(&dwmac_regs_->miiaddr) & MII_BUSY )) {
+            *val = readl(&dwmac_regs_->miidata);
+            return ZX_OK;
+        }
+        zx_nanosleep(zx_deadline_after(ZX_USEC(10)));
+    }
+    return ZX_ERR_TIMED_OUT;
 }
 
 

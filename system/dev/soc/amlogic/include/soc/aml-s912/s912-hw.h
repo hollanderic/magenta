@@ -17,6 +17,14 @@
 #define PER_ETH_REG4            (0x400 + (0x58 << 2))
 
 
+#define HHI_REG_BASE            (0xc883c000)
+#define HHI_REG_SIZE            (0x2000)
+//Offsets of HHI registers
+#define HHI_MEM_PD_REG0         (0x40 << 2)
+#define HHI_GCLK_MPEG1          (0x51 << 2)
+
+
+
 #define ETH_MAC_REG_BASE         (0xc9410000)
 #define ETH_MAC_REG_SIZE         (0x00010000)
 

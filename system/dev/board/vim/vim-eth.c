@@ -31,7 +31,11 @@ static const pbus_mmio_t vim2_eth_mmios[] = {
     {
         .base   = ETH_MAC_REG_BASE,
         .length = ETH_MAC_REG_SIZE,
-    }
+    },
+    {
+        .base   = HHI_REG_BASE,
+        .length = HHI_REG_SIZE,
+    },
 };
 
 static pbus_dev_t eth_dev = {
