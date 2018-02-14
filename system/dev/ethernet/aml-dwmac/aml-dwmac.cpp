@@ -7,7 +7,11 @@
 
 #include <fbl/auto_lock.h>
 #include <fbl/type_support.h>
+#include <fbl/ref_counted.h>
+
 #include <fbl/ref_ptr.h>
+#include <fbl/vmar_manager.h>
+#include <fbl/vmo_mapper.h>
 #include <hw/reg.h>
 #include <pretty/hexdump.h>
 #include <zircon/compiler.h>
@@ -32,7 +36,11 @@ zx_status_t AmlDWMacDevice::Create(zx_device_t* device){
     auto mac_device = fbl::unique_ptr<eth::AmlDWMacDevice>(
         new eth::AmlDWMacDevice(device));
 
-    zx_status_t status = device_get_protocol(mac_device->parent_,
+    zx_status_t status = mac_device->InitBuffers();
+    if (status != ZX_OK) return status;
+
+
+    status = device_get_protocol(mac_device->parent_,
                                             ZX_PROTOCOL_PLATFORM_DEV,
                                             &mac_device->pdev_);
     if (status != ZX_OK) {
@@ -121,6 +129,45 @@ zx_status_t AmlDWMacDevice::Create(zx_device_t* device){
     return ZX_OK;
 }
 
+zx_status_t AmlDWMacDevice::InitBuffers() {
+    fbl::RefPtr<fbl::VmarManager> vmar_mgr;
+    //create vmar large enough for rx,tx buffers, and rx,tx dma descriptors
+    size_t desc_size = ROUNDUP(2 * sizeof(dw_dmadescr) * num_descriptors_, PAGE_SIZE);
+    size_t buff_size = ROUNDUP(2 * num_descriptors_ * txn_buffer_size_, PAGE_SIZE);
+
+    vmar_mgr = fbl::VmarManager::Create(desc_size +  buff_size, nullptr);
+
+    zx::vmo desc_vmo;
+    zx_status_t status = dma_desc_mapper_.CreateAndMap(desc_size,
+                                ZX_VM_FLAG_PERM_READ | ZX_VM_FLAG_PERM_WRITE,
+                                vmar_mgr,
+                                &desc_vmo,
+                                ZX_RIGHT_READ | ZX_RIGHT_MAP | ZX_RIGHT_WRITE);
+    if (status != ZX_OK) return status;
+
+    zx::vmo buff_vmo;
+    status = dma_buff_mapper_.CreateAndMap(buff_size,
+                                ZX_VM_FLAG_PERM_READ | ZX_VM_FLAG_PERM_WRITE,
+                                vmar_mgr,
+                                &buff_vmo,
+                                ZX_RIGHT_READ | ZX_RIGHT_MAP | ZX_RIGHT_WRITE);
+    if (status != ZX_OK) return status;
+
+    tx_buffer_ = static_cast<uint8_t*>(dma_buff_mapper_.start());
+    //rx buffer right after tx
+    rx_buffer_ = &tx_buffer_[txn_buffer_size_ * num_descriptors_];
+
+    tx_descriptors_ = static_cast<dw_dmadescr*>(dma_desc_mapper_.start());
+    //rx descriptors right after tx
+    rx_descriptors_ = &tx_descriptors_[num_descriptors_];
+
+    TxDescInit(&desc_vmo, &buff_vmo);
+
+
+
+    return status;
+}
+
 zx_status_t AmlDWMacDevice::MDIOWrite(uint32_t reg, uint32_t val){
 
     writel(val, &dwmac_regs_->miidata);
@@ -162,6 +209,44 @@ zx_status_t AmlDWMacDevice::MDIORead(uint32_t reg, uint32_t* val){
     return ZX_ERR_TIMED_OUT;
 }
 
+zx_status_t AmlDWMacDevice::TxDescInit(zx::vmo* desc, zx::vmo* buff) {
+    for (uint32_t i = 0; i< num_descriptors_; i++) {
+        //tx_descriptors_[i].dmamac_addr = &tx_buffer_[i * txn_buffer_size_];
+    }
+    return ZX_OK;
+}
+#if 0
+static void tx_descs_init(struct eth_device *dev)
+{
+    struct dw_eth_dev *priv = dev->priv;
+    struct eth_dma_regs *dma_p = priv->dma_regs_p;
+    struct dmamacdescr *desc_table_p = &priv->tx_mac_descrtable[0];
+    char *txbuffs = &priv->txbuffs[0];
+    struct dmamacdescr *desc_p;
+    u32 idx;
+
+    for (idx = 0; idx < CONFIG_TX_DESCR_NUM; idx++) {
+        desc_p = &desc_table_p[idx];
+        desc_p->dmamac_addr = (u32)(phys_addr_t)&txbuffs[idx * CONFIG_ETH_BUFSIZE];
+        desc_p->dmamac_next = (u32)(phys_addr_t)&desc_table_p[idx + 1];
+
+
+        desc_p->dmamac_cntl = DESC_TXCTRL_TXCHAIN;
+        desc_p->txrx_status = 0;
+    }
+
+    /* Correcting the last pointer of the chain */
+    desc_p->dmamac_next = (u32)(phys_addr_t)&desc_table_p[0];
+
+    /* Flush all Tx buffer descriptors at once */
+    flush_dcache_range((phys_addr_t)priv->tx_mac_descrtable,
+               (phys_addr_t)priv->tx_mac_descrtable +
+               sizeof(priv->tx_mac_descrtable));
+
+    writel((ulong)&desc_table_p[0], &dma_p->txdesclistaddr);
+    priv->tx_currdescnum = 0;
+}
+#endif
 
 AmlDWMacDevice::AmlDWMacDevice(zx_device_t *device)
     : ddk::Device<AmlDWMacDevice, ddk::Unbindable>(device) {

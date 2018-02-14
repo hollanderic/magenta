@@ -91,7 +91,7 @@ typedef volatile struct dw_mac_regs {
     uint32_t flowcontrol;    /* 0x18 */
     uint32_t vlantag;        /* 0x1c */
     uint32_t version;        /* 0x20 */
-    uint8_t reserved_1[20];
+    uint8_t  reserved_1[20];
     uint32_t intreg;        /* 0x38 */
     uint32_t intmask;        /* 0x3c */
     uint32_t macaddr0hi;        /* 0x40 */
@@ -99,6 +99,14 @@ typedef volatile struct dw_mac_regs {
 } dw_mac_regs_t;
 
 
+
+//DMA transaction descriptors
+struct dw_dmadescr {
+    uint32_t txrx_status;
+    uint32_t dmamac_cntl;
+    uint32_t dmamac_addr;
+    uint32_t dmamac_next;
+} __ALIGNED(64);
 
 
 namespace eth {
@@ -125,6 +133,20 @@ class AmlDWMacDevice : public ddk::Device<AmlDWMacDevice, ddk::Unbindable>,
   private:
     //zx_status_t UpdateLinkStatus(zx_signals_t observed);
     //zx_status_t Recv(uint8_t* buffer, uint32_t capacity);
+    zx_status_t InitBuffers();
+    zx_status_t TxDescInit(zx::vmo* desc, zx::vmo* buff);
+    zx_status_t RxDescInit();
+
+    static constexpr uint32_t num_descriptors_ = 16;
+    static constexpr uint32_t txn_buffer_size_ = 2048;
+
+    dw_dmadescr* tx_descriptors_;
+    dw_dmadescr* rx_descriptors_;
+    fbl::VmoMapper dma_desc_mapper_;
+    fbl::VmoMapper dma_buff_mapper_;
+
+    uint8_t* tx_buffer_;
+    uint8_t* rx_buffer_;
 
     // designware mac options
     uint32_t options_ = 0;
@@ -134,6 +156,7 @@ class AmlDWMacDevice : public ddk::Device<AmlDWMacDevice, ddk::Unbindable>,
     uint32_t mtu_ = 0;
     uint8_t mac_[6] = {};
     uint16_t mii_addr_;
+
 
 
     platform_device_protocol_t pdev_;
