@@ -36,8 +36,8 @@ zx_status_t AmlDWMacDevice::Create(zx_device_t* device){
     auto mac_device = fbl::unique_ptr<eth::AmlDWMacDevice>(
         new eth::AmlDWMacDevice(device));
 
-    zx_status_t status = mac_device->InitBuffers();
-    if (status != ZX_OK) return status;
+    zx_status_t status ;//= mac_device->InitBuffers();
+    //if (status != ZX_OK) return status;
 
 
     status = device_get_protocol(mac_device->parent_,
@@ -117,7 +117,7 @@ zx_status_t AmlDWMacDevice::Create(zx_device_t* device){
     uint32_t val;
     for (uint32_t i=0; i<31; i++) {
         if (mac_device->MDIORead(i,&val)==ZX_OK) {
-            printf("MII%02u = %04x\n",i,val);
+            printf("MII%02u = %08x\n",i,val);
         } else {
             printf("MDIO READ TIMEOUT%u\n",i);
         }
@@ -130,52 +130,92 @@ zx_status_t AmlDWMacDevice::Create(zx_device_t* device){
 }
 
 zx_status_t AmlDWMacDevice::InitBuffers() {
-    fbl::RefPtr<fbl::VmarManager> vmar_mgr;
-    //create vmar large enough for rx,tx buffers, and rx,tx dma descriptors
-    size_t desc_size = ROUNDUP(2 * sizeof(dw_dmadescr) * num_descriptors_, PAGE_SIZE);
-    size_t buff_size = ROUNDUP(2 * num_descriptors_ * txn_buffer_size_, PAGE_SIZE);
 
+    fbl::RefPtr<fbl::VmarManager> vmar_mgr;
+
+    constexpr size_t kDescSize = 2 * kNumDesc_ * sizeof(dw_dmadescr);
+    //constexpr size_t kDescPages = ROUNDUP(kDescSize, PAGE_SIZE);
+
+    constexpr size_t kBufSize = 2 * kNumDesc_ * kTxnBufSize_;
+
+    //create vmar large enough for rx,tx buffers, and rx,tx dma descriptors
     vmar_mgr = fbl::VmarManager::Create(0x100000, nullptr);
 
     zx::vmo desc_vmo;
-    zx_status_t status = dma_desc_mapper_.CreateAndMap(desc_size,
+    zx_status_t status = dma_desc_mapper_.CreateAndMap(kDescSize,
                                 ZX_VM_FLAG_PERM_READ | ZX_VM_FLAG_PERM_WRITE,
                                 vmar_mgr,
                                 &desc_vmo,
                                 ZX_RIGHT_READ | ZX_RIGHT_MAP | ZX_RIGHT_WRITE);
     if (status != ZX_OK) {
-        printf("descriptor buffer create failed %d\n",status);
+        zxlogf(ERROR,"descriptor buffer create failed %d\n",status);
         return status;
     }
+
     zx::vmo buff_vmo;
-    status = dma_buff_mapper_.CreateAndMap(buff_size,
+    status = dma_buff_mapper_.CreateAndMap(kBufSize,
                                 ZX_VM_FLAG_PERM_READ | ZX_VM_FLAG_PERM_WRITE,
                                 vmar_mgr,
                                 &buff_vmo,
                                 ZX_RIGHT_READ | ZX_RIGHT_MAP | ZX_RIGHT_WRITE);
     if (status != ZX_OK) {
-        printf("data buffer create failed %d\n",status);
+        zxlogf(ERROR,"data buffer create failed %d\n",status);
         return status;
     }
-    // Commit the VMO to allow access to the physical mapping info
-    status = desc_vmo.op_range(ZX_VMO_OP_COMMIT, 0,
-                               txn_buffer_size_ * num_descriptors_ * 2,
-                               nullptr,0);
+
+    // Commit the buffer VMOs to allow access to the physical mapping info
+    status = desc_vmo.op_range(ZX_VMO_OP_COMMIT, 0, kDescSize, nullptr, 0);
+    if (status != ZX_OK) return status;
+
+    status = buff_vmo.op_range(ZX_VMO_OP_COMMIT, 0, kBufSize, nullptr, 0);
+    if (status != ZX_OK) return status;
 
     tx_buffer_ = static_cast<uint8_t*>(dma_buff_mapper_.start());
     //rx buffer right after tx
-    rx_buffer_ = &tx_buffer_[txn_buffer_size_ * num_descriptors_];
+    rx_buffer_ = &tx_buffer_[kBufSize / 2];
 
     tx_descriptors_ = static_cast<dw_dmadescr*>(dma_desc_mapper_.start());
     //rx descriptors right after tx
-    rx_descriptors_ = &tx_descriptors_[num_descriptors_];
+    rx_descriptors_ = &tx_descriptors_[kNumDesc_];
 
-    TxDescInit(&desc_vmo, &buff_vmo);
 
+    zx_paddr_t desc_phys[ROUNDUP(kDescSize, PAGE_SIZE) / PAGE_SIZE];
+    status = desc_vmo.op_range(ZX_VMO_OP_LOOKUP, 0, kDescSize,
+                                desc_phys, sizeof(desc_phys));
+    if (status != ZX_OK) return status;
+
+
+    zx_paddr_t buff_phys[ROUNDUP(kBufSize, PAGE_SIZE) / PAGE_SIZE];
+    status = buff_vmo.op_range(ZX_VMO_OP_LOOKUP, 0, kBufSize,
+                                buff_phys, sizeof(buff_phys));
+    if (status != ZX_OK) return status;
+
+
+    // Initialize descriptors. Doing tx and rx all at once
+    for (uint i = 0; i < kNumDesc_; i++) {
+
+        auto paddr = [](uint idx, size_t stride, zx_paddr_t* paddrs){
+            return static_cast<uint32_t>(paddrs[ idx * stride / PAGE_SIZE] +
+                                         ((idx * stride) % PAGE_SIZE));
+        };
+
+        tx_descriptors_[i].dmamac_next = paddr((i+1)%kNumDesc_,
+                                               sizeof(dw_dmadescr),
+                                               desc_phys);
+        tx_descriptors_[i].dmamac_addr = paddr(i, kTxnBufSize_, buff_phys);
+        tx_descriptors_[i].txrx_status = 0;
+        tx_descriptors_[i].dmamac_cntl = DESC_TXCTRL_TXCHAIN;
+
+        rx_descriptors_[i].dmamac_next = paddr((i+1)%kNumDesc_ + kNumDesc_,
+                                               sizeof(dw_dmadescr),
+                                               desc_phys);
+        rx_descriptors_[i].dmamac_addr = paddr(i + kNumDesc_, kTxnBufSize_, buff_phys);
+    }
     return ZX_OK;
-
-    return status;
+    //TODO - flush the tx descriptors
+    //Init dma_p->txdesclistaddr with address of first txdescriptor
 }
+
 
 zx_status_t AmlDWMacDevice::MDIOWrite(uint32_t reg, uint32_t val){
 
@@ -218,62 +258,6 @@ zx_status_t AmlDWMacDevice::MDIORead(uint32_t reg, uint32_t* val){
     return ZX_ERR_TIMED_OUT;
 }
 
-zx_status_t AmlDWMacDevice::TxDescInit(zx::vmo* desc, zx::vmo* buff) {
-    constexpr int num_pages = ROUNDUP(num_descriptors_ * sizeof(dw_dmadescr),PAGE_SIZE);
-    zx_paddr_t tempaddr[num_pages];
-
-
-    zx_status_t res = desc->op_range(ZX_VMO_OP_LOOKUP, 0, 1024,
-                                //ROUNDDOWN(i * sizeof(dw_dmadescr),PAGE_SIZE),PAGE_SIZE,
-                                tempaddr, sizeof(tempaddr));
-    if (res != ZX_OK) return res;
-
-    for (uint32_t i = 0; i< num_descriptors_; i++) {
-        zx_status_t res = desc->op_range(ZX_VMO_OP_LOOKUP, 0, 1024,
-                                //ROUNDDOWN(i * sizeof(dw_dmadescr),PAGE_SIZE),PAGE_SIZE,
-                                tempaddr, sizeof(tempaddr));
-        //printf("index %u - %08lx\n",i,ROUNDDOWN(i * sizeof(dw_dmadescr),PAGE_SIZE));
-        if (res == ZX_OK) {
-            printf("desc index %u - %p\n",i,(void*)tempaddr[0]);
-        } else {
-            printf("desc index %u lookup failed %d\n",i,res);
-        }
-        //tx_descriptors_[i].dmamac_addr = &tx_buffer_[i * txn_buffer_size_];
-    }
-    return ZX_OK;
-}
-#if 0
-static void tx_descs_init(struct eth_device *dev)
-{
-    struct dw_eth_dev *priv = dev->priv;
-    struct eth_dma_regs *dma_p = priv->dma_regs_p;
-    struct dmamacdescr *desc_table_p = &priv->tx_mac_descrtable[0];
-    char *txbuffs = &priv->txbuffs[0];
-    struct dmamacdescr *desc_p;
-    u32 idx;
-
-    for (idx = 0; idx < CONFIG_TX_DESCR_NUM; idx++) {
-        desc_p = &desc_table_p[idx];
-        desc_p->dmamac_addr = (u32)(phys_addr_t)&txbuffs[idx * CONFIG_ETH_BUFSIZE];
-        desc_p->dmamac_next = (u32)(phys_addr_t)&desc_table_p[idx + 1];
-
-
-        desc_p->dmamac_cntl = DESC_TXCTRL_TXCHAIN;
-        desc_p->txrx_status = 0;
-    }
-
-    /* Correcting the last pointer of the chain */
-    desc_p->dmamac_next = (u32)(phys_addr_t)&desc_table_p[0];
-
-    /* Flush all Tx buffer descriptors at once */
-    flush_dcache_range((phys_addr_t)priv->tx_mac_descrtable,
-               (phys_addr_t)priv->tx_mac_descrtable +
-               sizeof(priv->tx_mac_descrtable));
-
-    writel((ulong)&desc_table_p[0], &dma_p->txdesclistaddr);
-    priv->tx_currdescnum = 0;
-}
-#endif
 
 AmlDWMacDevice::AmlDWMacDevice(zx_device_t *device)
     : ddk::Device<AmlDWMacDevice, ddk::Unbindable>(device) {

@@ -81,6 +81,8 @@
 #define MII_NCONFIG        0x1c    /* Network interface config    */
 
 
+#define DESC_TXCTRL_TXCHAIN 0
+
 typedef volatile struct dw_mac_regs {
     uint32_t conf;        /* 0x00 */
     uint32_t framefilt;        /* 0x04 */
@@ -134,11 +136,12 @@ class AmlDWMacDevice : public ddk::Device<AmlDWMacDevice, ddk::Unbindable>,
     //zx_status_t UpdateLinkStatus(zx_signals_t observed);
     //zx_status_t Recv(uint8_t* buffer, uint32_t capacity);
     zx_status_t InitBuffers();
-    zx_status_t TxDescInit(zx::vmo* desc, zx::vmo* buff);
-    zx_status_t RxDescInit();
 
-    static constexpr uint32_t num_descriptors_ = 16;
-    static constexpr uint32_t txn_buffer_size_ = 2048;
+
+    //Number each of tx/rx transaction descriptor
+    static constexpr uint32_t kNumDesc_    = 16;
+    //Size of each transaction buffer
+    static constexpr uint32_t kTxnBufSize_ = 2048;
 
     dw_dmadescr* tx_descriptors_;
     dw_dmadescr* rx_descriptors_;
@@ -156,8 +159,6 @@ class AmlDWMacDevice : public ddk::Device<AmlDWMacDevice, ddk::Unbindable>,
     uint32_t mtu_ = 0;
     uint8_t mac_[6] = {};
     uint16_t mii_addr_;
-
-
 
     platform_device_protocol_t pdev_;
 
