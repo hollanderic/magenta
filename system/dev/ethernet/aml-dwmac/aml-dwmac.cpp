@@ -36,11 +36,7 @@ zx_status_t AmlDWMacDevice::Create(zx_device_t* device){
     auto mac_device = fbl::unique_ptr<eth::AmlDWMacDevice>(
         new eth::AmlDWMacDevice(device));
 
-    zx_status_t status ;//= mac_device->InitBuffers();
-    //if (status != ZX_OK) return status;
-
-
-    status = device_get_protocol(mac_device->parent_,
+    zx_status_t status = device_get_protocol(mac_device->parent_,
                                             ZX_PROTOCOL_PLATFORM_DEV,
                                             &mac_device->pdev_);
     if (status != ZX_OK) {
@@ -71,6 +67,7 @@ zx_status_t AmlDWMacDevice::Create(zx_device_t* device){
         zxlogf(ERROR,"aml-dwmac: could not map periph mmio: %d\n",status);
         return status;
     }
+    //void* reg_ptr;
     status = pdev_map_mmio(&mac_device->pdev_, 1,
                             ZX_CACHE_POLICY_UNCACHED_DEVICE,
                             (void**)&mac_device->dwmac_regs_,
@@ -80,7 +77,11 @@ zx_status_t AmlDWMacDevice::Create(zx_device_t* device){
         zxlogf(ERROR,"aml-dwmac: could not map dwmac mmio: %d\n",status);
         return status;
     }
-
+    //c_device->dwmac_regs_
+    //dw_dma_regs_t* dmaptr = static_cast<dw_dma_regs_t*>(
+    //                          (void*)mac_device->dwmac_regs_ + DW_DMA_BASE_OFFSET);
+    mac_device->dwdma_regs_ = reinterpret_cast<dw_dma_regs_t*>(
+                                  (zx_vaddr_t)mac_device->dwmac_regs_ + DW_DMA_BASE_OFFSET);
 
     status = pdev_map_mmio(&mac_device->pdev_, 2,
                             ZX_CACHE_POLICY_UNCACHED_DEVICE,
@@ -91,6 +92,11 @@ zx_status_t AmlDWMacDevice::Create(zx_device_t* device){
         zxlogf(ERROR,"aml-dwmac: could not map hiu mmio: %d\n",status);
         return status;
     }
+
+
+    status = mac_device->InitBuffers();
+    if (status != ZX_OK) return status;
+
 
     writel( ETH_REG0_RGMII_SEL |
             (1 << ETH_REG0_TX_CLK_PH_POS) |
@@ -122,6 +128,8 @@ zx_status_t AmlDWMacDevice::Create(zx_device_t* device){
             printf("MDIO READ TIMEOUT%u\n",i);
         }
     }
+    printf("macaddr hi -> %08x\n",mac_device->dwmac_regs_->macaddr0hi);
+    printf("macaddr lo -> %08x\n",mac_device->dwmac_regs_->macaddr0lo);
 
 #undef PREG
 #endif
@@ -177,7 +185,8 @@ zx_status_t AmlDWMacDevice::InitBuffers() {
     tx_descriptors_ = static_cast<dw_dmadescr*>(dma_desc_mapper_.start());
     //rx descriptors right after tx
     rx_descriptors_ = &tx_descriptors_[kNumDesc_];
-
+    memset(tx_descriptors_, 0, kDescSize);
+    zx_cache_flush(tx_descriptors_, kDescSize, ZX_CACHE_FLUSH_DATA);
 
     zx_paddr_t desc_phys[ROUNDUP(kDescSize, PAGE_SIZE) / PAGE_SIZE];
     status = desc_vmo.op_range(ZX_VMO_OP_LOOKUP, 0, kDescSize,
@@ -191,13 +200,14 @@ zx_status_t AmlDWMacDevice::InitBuffers() {
     if (status != ZX_OK) return status;
 
 
+    auto paddr = [](uint idx, size_t stride, zx_paddr_t* paddrs){
+        return static_cast<uint32_t>(paddrs[ idx * stride / PAGE_SIZE] +
+                                     ((idx * stride) % PAGE_SIZE));
+    };
+
     // Initialize descriptors. Doing tx and rx all at once
     for (uint i = 0; i < kNumDesc_; i++) {
 
-        auto paddr = [](uint idx, size_t stride, zx_paddr_t* paddrs){
-            return static_cast<uint32_t>(paddrs[ idx * stride / PAGE_SIZE] +
-                                         ((idx * stride) % PAGE_SIZE));
-        };
 
         tx_descriptors_[i].dmamac_next = paddr((i+1)%kNumDesc_,
                                                sizeof(dw_dmadescr),
@@ -210,10 +220,19 @@ zx_status_t AmlDWMacDevice::InitBuffers() {
                                                sizeof(dw_dmadescr),
                                                desc_phys);
         rx_descriptors_[i].dmamac_addr = paddr(i + kNumDesc_, kTxnBufSize_, buff_phys);
+        rx_descriptors_[i].dmamac_cntl =
+                        (MAC_MAX_FRAME_SZ & DESC_RXCTRL_SIZE1MASK) | \
+                         DESC_RXCTRL_RXCHAIN;
+
+        rx_descriptors_[i].txrx_status = DESC_RXSTS_OWNBYDMA;
     }
+
+    zx_cache_flush(tx_descriptors_, kDescSize, ZX_CACHE_FLUSH_DATA);
+
+    dwdma_regs_->txdesclistaddr = paddr(0, sizeof(dw_dmadescr),desc_phys);
+    dwdma_regs_->rxdesclistaddr = paddr(kNumDesc_, sizeof(dw_dmadescr),desc_phys);
+
     return ZX_OK;
-    //TODO - flush the tx descriptors
-    //Init dma_p->txdesclistaddr with address of first txdescriptor
 }
 
 
@@ -282,7 +301,7 @@ void AmlDWMacDevice::DdkUnbind() {
 
 zx_status_t AmlDWMacDevice::EthmacQuery(uint32_t options, ethmac_info_t* info) {
     memset(info, 0, sizeof(*info));
-    info->features = 69;
+    info->features = 0;
     info->mtu = 100;
     uint8_t mac[6] = {0xde, 0xad, 0xbe, 0xef, 0xfa, 0xce};
     memcpy(info->mac, mac, 6);

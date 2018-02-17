@@ -60,47 +60,111 @@
 
 #define MII_BMCR        0x00    /* Basic mode control register */
 #define MII_BMSR        0x01    /* Basic mode status register  */
-#define MII_PHYSID1        0x02    /* PHYS ID 1               */
-#define MII_PHYSID2        0x03    /* PHYS ID 2               */
-#define MII_ADVERTISE        0x04    /* Advertisement control reg   */
-#define MII_LPA            0x05    /* Link partner ability reg    */
-#define MII_EXPANSION        0x06    /* Expansion register           */
-#define MII_CTRL1000        0x09    /* 1000BASE-T control           */
-#define MII_STAT1000        0x0a    /* 1000BASE-T status           */
-#define MII_ESTATUS        0x0f    /* Extended Status */
-#define MII_DCOUNTER        0x12    /* Disconnect counter           */
-#define MII_FCSCOUNTER        0x13    /* False carrier counter       */
-#define MII_NWAYTEST        0x14    /* N-way auto-neg test reg     */
-#define MII_RERRCOUNTER     0x15    /* Receive error counter       */
-#define MII_SREVISION        0x16    /* Silicon revision           */
-#define MII_RESV1        0x17    /* Reserved...               */
-#define MII_LBRERROR        0x18    /* Lpback, rx, bypass error    */
-#define MII_PHYADDR        0x19    /* PHY address               */
-#define MII_RESV2        0x1a    /* Reserved...               */
-#define MII_TPISTATUS        0x1b    /* TPI status for 10mbps       */
-#define MII_NCONFIG        0x1c    /* Network interface config    */
+#define MII_PHYSID1     0x02    /* PHYS ID 1               */
+#define MII_PHYSID2     0x03    /* PHYS ID 2               */
+#define MII_ADVERTISE   0x04    /* Advertisement control reg   */
+#define MII_LPA         0x05    /* Link partner ability reg    */
+#define MII_EXPANSION   0x06    /* Expansion register           */
+#define MII_CTRL1000    0x09    /* 1000BASE-T control           */
+#define MII_STAT1000    0x0a    /* 1000BASE-T status           */
+#define MII_ESTATUS     0x0f    /* Extended Status */
+#define MII_DCOUNTER    0x12    /* Disconnect counter           */
+#define MII_FCSCOUNTER  0x13    /* False carrier counter       */
+#define MII_NWAYTEST    0x14    /* N-way auto-neg test reg     */
+#define MII_RERRCOUNTER 0x15    /* Receive error counter       */
+#define MII_SREVISION   0x16    /* Silicon revision           */
+#define MII_RESV1       0x17    /* Reserved...               */
+#define MII_LBRERROR    0x18    /* Lpback, rx, bypass error    */
+#define MII_PHYADDR     0x19    /* PHY address               */
+#define MII_RESV2       0x1a    /* Reserved...               */
+#define MII_TPISTATUS   0x1b    /* TPI status for 10mbps       */
+#define MII_NCONFIG     0x1c    /* Network interface config    */
+
+#define DESC_TXSTS_OWNBYDMA        (1 << 31)
+#define DESC_TXSTS_MSK            (0x1FFFF << 0)
+
+/* rx status bits definitions */
+#define DESC_RXSTS_OWNBYDMA        (1 << 31)
+#define DESC_RXSTS_DAFILTERFAIL        (1 << 30)
+#define DESC_RXSTS_FRMLENMSK        (0x3FFF << 16)
+#define DESC_RXSTS_FRMLENSHFT        (16)
+
+#define DESC_RXSTS_ERROR        (1 << 15)
+#define DESC_RXSTS_RXTRUNCATED        (1 << 14)
+#define DESC_RXSTS_SAFILTERFAIL        (1 << 13)
+#define DESC_RXSTS_RXIPC_GIANTFRAME    (1 << 12)
+#define DESC_RXSTS_RXDAMAGED        (1 << 11)
+#define DESC_RXSTS_RXVLANTAG        (1 << 10)
+#define DESC_RXSTS_RXFIRST        (1 << 9)
+#define DESC_RXSTS_RXLAST        (1 << 8)
+#define DESC_RXSTS_RXIPC_GIANT        (1 << 7)
+#define DESC_RXSTS_RXCOLLISION        (1 << 6)
+#define DESC_RXSTS_RXFRAMEETHER        (1 << 5)
+#define DESC_RXSTS_RXWATCHDOG        (1 << 4)
+#define DESC_RXSTS_RXMIIERROR        (1 << 3)
+#define DESC_RXSTS_RXDRIBBLING        (1 << 2)
+#define DESC_RXSTS_RXCRC        (1 << 1)
 
 
-#define DESC_TXCTRL_TXCHAIN 0
+#define DESC_TXCTRL_TXINT        (1 << 31)
+#define DESC_TXCTRL_TXLAST        (1 << 30)
+#define DESC_TXCTRL_TXFIRST        (1 << 29)
+#define DESC_TXCTRL_TXCHECKINSCTRL    (3 << 27)
+#define DESC_TXCTRL_TXCRCDIS        (1 << 26)
+#define DESC_TXCTRL_TXRINGEND        (1 << 25)
+#define DESC_TXCTRL_TXCHAIN        (1 << 24)
+
+#define DESC_TXCTRL_SIZE1MASK        (0x7FF << 0)
+#define DESC_TXCTRL_SIZE1SHFT        (0)
+#define DESC_TXCTRL_SIZE2MASK        (0x7FF << 11)
+#define DESC_TXCTRL_SIZE2SHFT        (11)
+
+#define DESC_RXCTRL_RXINTDIS        (1 << 31)
+#define DESC_RXCTRL_RXRINGEND        (1 << 25)
+#define DESC_RXCTRL_RXCHAIN        (1 << 24)
+
+#define DESC_RXCTRL_SIZE1MASK        (0x7FF << 0)
+#define DESC_RXCTRL_SIZE1SHFT        (0)
+#define DESC_RXCTRL_SIZE2MASK        (0x7FF << 11)
+#define DESC_RXCTRL_SIZE2SHFT        (11)
+
+#define MAC_MAX_FRAME_SZ    (1600)
 
 typedef volatile struct dw_mac_regs {
-    uint32_t conf;        /* 0x00 */
-    uint32_t framefilt;        /* 0x04 */
-    uint32_t hashtablehigh;    /* 0x08 */
+    uint32_t conf;            /* 0x00 */
+    uint32_t framefilt;       /* 0x04 */
+    uint32_t hashtablehigh;   /* 0x08 */
     uint32_t hashtablelow;    /* 0x0c */
-    uint32_t miiaddr;        /* 0x10 */
-    uint32_t miidata;        /* 0x14 */
-    uint32_t flowcontrol;    /* 0x18 */
-    uint32_t vlantag;        /* 0x1c */
-    uint32_t version;        /* 0x20 */
+    uint32_t miiaddr;         /* 0x10 */
+    uint32_t miidata;         /* 0x14 */
+    uint32_t flowcontrol;     /* 0x18 */
+    uint32_t vlantag;         /* 0x1c */
+    uint32_t version;         /* 0x20 */
     uint8_t  reserved_1[20];
-    uint32_t intreg;        /* 0x38 */
-    uint32_t intmask;        /* 0x3c */
-    uint32_t macaddr0hi;        /* 0x40 */
-    uint32_t macaddr0lo;        /* 0x44 */
+    uint32_t intreg;          /* 0x38 */
+    uint32_t intmask;         /* 0x3c */
+    uint32_t macaddr0hi;      /* 0x40 */
+    uint32_t macaddr0lo;      /* 0x44 */
 } dw_mac_regs_t;
 
+// Offset of DMA regs into dwmac register block
+#define DW_DMA_BASE_OFFSET    (0x1000)
 
+typedef volatile struct dw_dma_regs {
+    uint32_t busmode;         /* 0x00 */
+    uint32_t txpolldemand;    /* 0x04 */
+    uint32_t rxpolldemand;    /* 0x08 */
+    uint32_t rxdesclistaddr;  /* 0x0c */
+    uint32_t txdesclistaddr;  /* 0x10 */
+    uint32_t status;          /* 0x14 */
+    uint32_t opmode;          /* 0x18 */
+    uint32_t intenable;       /* 0x1c */
+    uint8_t reserved[40];
+    uint32_t currhosttxdesc;  /* 0x48 */
+    uint32_t currhostrxdesc;  /* 0x4c */
+    uint32_t currhosttxbuffaddr;    /* 0x50 */
+    uint32_t currhostrxbuffaddr;    /* 0x54 */
+} dw_dma_regs_t;
 
 //DMA transaction descriptors
 struct dw_dmadescr {
@@ -158,7 +222,7 @@ class AmlDWMacDevice : public ddk::Device<AmlDWMacDevice, ddk::Unbindable>,
     uint32_t features_ = 0;
     uint32_t mtu_ = 0;
     uint8_t mac_[6] = {};
-    uint16_t mii_addr_;
+    uint16_t mii_addr_ = 0;
 
     platform_device_protocol_t pdev_;
 
@@ -167,6 +231,7 @@ class AmlDWMacDevice : public ddk::Device<AmlDWMacDevice, ddk::Unbindable>,
     zx::vmo periph_regs_vmo_;
 
     dw_mac_regs_t* dwmac_regs_;
+    dw_dma_regs_t* dwdma_regs_;
     size_t dwmac_regs_size_;
     zx::vmo dwmac_regs_vmo_;
 
