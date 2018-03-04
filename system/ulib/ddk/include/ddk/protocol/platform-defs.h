@@ -59,6 +59,7 @@ __BEGIN_CDECLS;
 #define PDEV_DID_AMLOGIC_I2C        2
 #define PDEV_DID_AMLOGIC_UART       3
 #define PDEV_DID_AMLOGIC_CLK        4
+#define PDEV_DID_AMLOGIC_ETH        5
 
 // Broadcom
 #define PDEV_VID_BROADCOM           6
