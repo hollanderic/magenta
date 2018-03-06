@@ -159,11 +159,12 @@ typedef volatile struct dw_dma_regs {
     uint32_t status;          /* 0x14 */
     uint32_t opmode;          /* 0x18 */
     uint32_t intenable;       /* 0x1c */
-    uint8_t reserved[40];
-    uint32_t currhosttxdesc;  /* 0x48 */
-    uint32_t currhostrxdesc;  /* 0x4c */
-    uint32_t currhosttxbuffaddr;    /* 0x50 */
-    uint32_t currhostrxbuffaddr;    /* 0x54 */
+    uint32_t reserved[10];
+    uint32_t currhosttxdesc;       /* 0x48 */
+    uint32_t currhostrxdesc;       /* 0x4c */
+    uint32_t currhosttxbuffaddr;   /* 0x50 */
+    uint32_t currhostrxbuffaddr;   /* 0x54 */
+    uint32_t hwfeature;            /* 0x58 */
 } dw_dma_regs_t;
 
 //DMA transaction descriptors
@@ -200,6 +201,7 @@ class AmlDWMacDevice : public ddk::Device<AmlDWMacDevice, ddk::Unbindable>,
     //zx_status_t UpdateLinkStatus(zx_signals_t observed);
     //zx_status_t Recv(uint8_t* buffer, uint32_t capacity);
     zx_status_t InitBuffers();
+    zx_status_t GetMAC(uint8_t* addr);
 
 
     //Number each of tx/rx transaction descriptor

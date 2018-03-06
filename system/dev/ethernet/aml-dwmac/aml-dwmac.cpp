@@ -92,6 +92,9 @@ zx_status_t AmlDWMacDevice::Create(zx_device_t* device){
         zxlogf(ERROR,"aml-dwmac: could not map hiu mmio: %d\n",status);
         return status;
     }
+    mac_device->dwmac_regs_->macaddr0lo = 0;
+    printf("mac addr hi -> %08x\n",mac_device->dwmac_regs_->macaddr0hi);
+    printf("mac addr lo -> %08x\n",mac_device->dwmac_regs_->macaddr0lo);
 
 
     status = mac_device->InitBuffers();
@@ -128,8 +131,17 @@ zx_status_t AmlDWMacDevice::Create(zx_device_t* device){
             printf("MDIO READ TIMEOUT%u\n",i);
         }
     }
-    printf("macaddr hi -> %08x\n",mac_device->dwmac_regs_->macaddr0hi);
-    printf("macaddr lo -> %08x\n",mac_device->dwmac_regs_->macaddr0lo);
+    printf("mac addr hi -> %08x\n",mac_device->dwmac_regs_->macaddr0hi);
+    printf("mac addr lo -> %08x\n",mac_device->dwmac_regs_->macaddr0lo);
+    printf("mac version -> %08x\n",mac_device->dwmac_regs_->version);
+    printf("\ndma hwfeature -> %08x\n",mac_device->dwdma_regs_->hwfeature);
+    printf("dma busmode   -> %08x\n",mac_device->dwdma_regs_->busmode);
+    printf("dma status    -> %08x\n",mac_device->dwdma_regs_->status);
+    uint32_t temp;
+    mac_device->MDIORead(1,&temp);
+    printf("MII Status = %08x\n",temp);
+    mac_device->MDIORead(1,&temp);
+    printf("MII Status = %08x\n",temp);
 
 #undef PREG
 #endif
@@ -299,11 +311,26 @@ void AmlDWMacDevice::DdkUnbind() {
     // When the thread exits after the channel is closed, it will call DdkRemove.
 }
 
+zx_status_t AmlDWMacDevice::GetMAC(uint8_t* addr) {
+    uint32_t hi = dwmac_regs_->macaddr0hi;
+    uint32_t lo = dwmac_regs_->macaddr0lo;
+
+    /* Extract the MAC address from the high and low words */
+    addr[0] = (lo & 0xff);
+    addr[1] = (lo >> 8) & 0xff;
+    addr[2] = (lo >> 16) & 0xff;
+    addr[3] = ((uint8_t)(lo >> 24) & 0xff);
+    addr[4] = (hi & 0xff);
+    addr[5] = (hi >> 8) & 0xff;
+    return ZX_OK;
+}
+
 zx_status_t AmlDWMacDevice::EthmacQuery(uint32_t options, ethmac_info_t* info) {
     memset(info, 0, sizeof(*info));
     info->features = 0;
-    info->mtu = 100;
-    uint8_t mac[6] = {0xde, 0xad, 0xbe, 0xef, 0xfa, 0xce};
+    info->mtu = 1500;
+    uint8_t mac[6] = {};
+    GetMAC(mac);
     memcpy(info->mac, mac, 6);
     return ZX_OK;
 }
@@ -328,8 +355,13 @@ zx_status_t AmlDWMacDevice::EthmacStart(fbl::unique_ptr<ddk::EthmacIfcProxy> pro
 
 
 zx_status_t AmlDWMacDevice::EthmacQueueTx(uint32_t options, ethmac_netbuf_t* netbuf) {
-
-
+#if 0
+    printf("Options: %08x\n",options);
+    printf("buffer addres (%d)%lx\n", netbuf->len, netbuf->phys);
+    for (int i=0; i < 16; i++)
+        printf("%02x ",((uint8_t*)netbuf->data)[i]);
+    printf("\n");
+#endif
 #if 0
     uint8_t temp_buf[ETHERTAP_MAX_MTU + sizeof(ethertap_socket_header_t)];
     auto header = reinterpret_cast<ethertap_socket_header*>(temp_buf);
@@ -377,6 +409,7 @@ zx_status_t AmlDWMacDevice::EthmacSetParam(uint32_t param, int32_t value, void* 
     // A failure of data_.write is not a simulated failure of hardware under test, so log it but
     // don't report failure on the SetParam attempt.
 #endif
+    printf("Tried to set param\n");
     return ZX_ERR_NOT_SUPPORTED;
 }
 
