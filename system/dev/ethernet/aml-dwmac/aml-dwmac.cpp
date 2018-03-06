@@ -30,6 +30,20 @@ enum {
     MAC_INTR,
 };
 
+int amlmac_device_thread(void* arg) {
+    AmlDWMacDevice* device = reinterpret_cast<AmlDWMacDevice*>(arg);
+    return device->Thread();
+}
+int AmlDWMacDevice::Thread() {
+    zxlogf(INFO,"Device Thread Started\n");
+    while (true) {
+        zx_nanosleep(zx_deadline_after(ZX_SEC(1)));
+
+    }
+
+    return 0;
+}
+
 //static
 zx_status_t AmlDWMacDevice::Create(zx_device_t* device){
 
@@ -142,9 +156,14 @@ zx_status_t AmlDWMacDevice::Create(zx_device_t* device){
     printf("MII Status = %08x\n",temp);
     mac_device->MDIORead(1,&temp);
     printf("MII Status = %08x\n",temp);
-
 #undef PREG
 #endif
+
+    int ret = thrd_create_with_name(&mac_device->thread_, amlmac_device_thread,
+                                    reinterpret_cast<void*>(&mac_device),
+                                    "amlmac-thread");
+    ZX_DEBUG_ASSERT(ret == thrd_success);
+
     __UNUSED auto ptr = mac_device.release();
     return ZX_OK;
 }
@@ -327,7 +346,7 @@ zx_status_t AmlDWMacDevice::GetMAC(uint8_t* addr) {
 
 zx_status_t AmlDWMacDevice::EthmacQuery(uint32_t options, ethmac_info_t* info) {
     memset(info, 0, sizeof(*info));
-    info->features = 0;
+    info->features = 0;//ETHMAC_FEATURE_DMA;
     info->mtu = 1500;
     uint8_t mac[6] = {};
     GetMAC(mac);
@@ -355,12 +374,12 @@ zx_status_t AmlDWMacDevice::EthmacStart(fbl::unique_ptr<ddk::EthmacIfcProxy> pro
 
 
 zx_status_t AmlDWMacDevice::EthmacQueueTx(uint32_t options, ethmac_netbuf_t* netbuf) {
-#if 0
-    printf("Options: %08x\n",options);
-    printf("buffer addres (%d)%lx\n", netbuf->len, netbuf->phys);
-    for (int i=0; i < 16; i++)
-        printf("%02x ",((uint8_t*)netbuf->data)[i]);
-    printf("\n");
+#if 1
+    //printf("Options: %08x\n",options);
+    printf("buffer address (%d)%lx\n", netbuf->len, netbuf->phys);
+    //for (int i=0; i < 16; i++)
+    //    printf("%02x ",((uint8_t*)netbuf->data)[i]);
+    //printf("\n");
 #endif
 #if 0
     uint8_t temp_buf[ETHERTAP_MAX_MTU + sizeof(ethertap_socket_header_t)];

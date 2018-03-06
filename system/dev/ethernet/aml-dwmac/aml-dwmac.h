@@ -195,7 +195,7 @@ class AmlDWMacDevice : public ddk::Device<AmlDWMacDevice, ddk::Unbindable>,
     zx_status_t EthmacSetParam(uint32_t param, int32_t value, void* data);
     zx_status_t MDIOWrite(uint32_t reg, uint32_t val);
     zx_status_t MDIORead(uint32_t reg, uint32_t* val);
-    //int Thread();
+    int Thread();
 
   private:
     //zx_status_t UpdateLinkStatus(zx_signals_t observed);

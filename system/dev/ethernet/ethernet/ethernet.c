@@ -456,10 +456,10 @@ static int eth_send(ethdev_t* edev, eth_fifo_entry_t* entries, uint32_t count) {
                 zxlogf(SPEW, "setting OPT_MORE (%u packets to go)\n", count);
             }
             tx_info->netbuf.data = edev->io_buf + e->offset;
-            if (edev0->info.features & ETHMAC_FEATURE_DMA) {
+/*            if ((edev0->info.features & ETHMAC_FEATURE_DMA) && (edev->paddr_map)) {
                 tx_info->netbuf.phys = edev->paddr_map[e->offset / PAGE_SIZE] +
                                        (e->offset & PAGE_MASK);
-            }
+            }*/
             tx_info->netbuf.len = e->length;
             tx_info->fifo_cookie = e->cookie;
             status = edev0->mac.ops->queue_tx(edev0->mac.ctx, opts, &tx_info->netbuf);
@@ -567,15 +567,20 @@ static ssize_t eth_set_iobuf_locked(ethdev_t* edev, const void* in_buf, size_t i
         zxlogf(ERROR, "eth [%s]: could not get io_buf size: %d\n", edev->name, status);
         goto fail;
     }
-
+    printf("eth vmo size = %ld\n",size);
     if ((status = zx_vmar_map(zx_vmar_root_self(), 0, vmo, 0, size,
                               ZX_VM_FLAG_PERM_READ | ZX_VM_FLAG_PERM_WRITE,
                               (uintptr_t*)&edev->io_buf)) < 0) {
         zxlogf(ERROR, "eth [%s]: could not map io_buf: %d\n", edev->name, status);
         goto fail;
     }
-
+    memset(edev->io_buf,0,size);
     if (edev->edev0->info.features & ETHMAC_FEATURE_DMA) {
+ /*       if ((status = zx_vmo_op_range(vmo, ZX_VMO_OP_COMMIT,
+                                      0 , size, NULL, 0)) != ZX_OK) {
+            zxlogf(ERROR, "eth [%s]: vmo_op_range failed, can't commit vmo\n", edev->name);
+            goto fail;
+        }*/
         size_t paddr_map_size = (ROUNDUP(size, PAGE_SIZE) / PAGE_SIZE) * sizeof(zx_paddr_t);
         edev->paddr_map = malloc(paddr_map_size);
         if (!edev->paddr_map) {
@@ -583,9 +588,9 @@ static ssize_t eth_set_iobuf_locked(ethdev_t* edev, const void* in_buf, size_t i
             goto fail;
         }
         // TODO: pin memory
-        if ((status = zx_vmo_op_range(edev->io_vmo, ZX_VMO_OP_LOOKUP, 0, size, &edev->paddr_map,
+        if ((status = zx_vmo_op_range(vmo, ZX_VMO_OP_LOOKUP, 0, size, &edev->paddr_map,
                                       paddr_map_size)) != ZX_OK) {
-            zxlogf(ERROR, "eth [%s]: vmo_op_range failed, can't determine phys addr\n", edev->name);
+            zxlogf(ERROR, "eth [%s]: vmo_op_range failed, can't determine phys addr- %d\n", edev->name,status);
             goto fail;
         }
     }
