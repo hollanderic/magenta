@@ -478,7 +478,7 @@ static int eth_send(ethdev_t* edev, eth_fifo_entry_t* entries, uint32_t count) {
                 zxlogf(SPEW, "setting OPT_MORE (%u packets to go)\n", count);
             }
             tx_info->netbuf.data = edev->io_buf + e->offset;
-            if (edev0->info.features & ETHMAC_FEATURE_DMA) {
+            if ((edev0->info.features & ETHMAC_FEATURE_DMA) && (edev->paddr_map)) {
                 tx_info->netbuf.phys = edev->paddr_map[e->offset / PAGE_SIZE] +
                                        (e->offset & PAGE_MASK);
             }
