@@ -110,6 +110,11 @@ zx_status_t AmlDWMacDevice::Create(zx_device_t* device){
     printf("mac addr hi -> %08x\n",mac_device->dwmac_regs_->macaddr0hi);
     printf("mac addr lo -> %08x\n",mac_device->dwmac_regs_->macaddr0lo);
 
+    status = pdev_get_bti(&mac_device->pdev_, 0, &mac_device->bti_);
+    if (status != ZX_OK) {
+        zxlogf(ERROR,"aml-dwmac: could not obtain bti: %d\n",status);
+        return status;
+    }
 
     status = mac_device->InitBuffers();
     if (status != ZX_OK) return status;
@@ -267,6 +272,11 @@ zx_status_t AmlDWMacDevice::InitBuffers() {
 }
 
 
+zx_handle_t AmlDWMacDevice::EthmacGetBti() {
+    printf("chucking back bti=%x\n",bti_);
+    return bti_;
+}
+
 zx_status_t AmlDWMacDevice::MDIOWrite(uint32_t reg, uint32_t val){
 
     writel(val, &dwmac_regs_->miidata);
@@ -376,7 +386,7 @@ zx_status_t AmlDWMacDevice::EthmacStart(fbl::unique_ptr<ddk::EthmacIfcProxy> pro
 zx_status_t AmlDWMacDevice::EthmacQueueTx(uint32_t options, ethmac_netbuf_t* netbuf) {
 #if 1
     //printf("Options: %08x\n",options);
-    printf("buffer address (%d)%lx\n", netbuf->len, netbuf->phys);
+    //printf("buffer address (%d)%lx\n", netbuf->len, netbuf->phys);
     //for (int i=0; i < 16; i++)
     //    printf("%02x ",((uint8_t*)netbuf->data)[i]);
     //printf("\n");

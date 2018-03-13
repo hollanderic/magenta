@@ -195,6 +195,7 @@ class AmlDWMacDevice : public ddk::Device<AmlDWMacDevice, ddk::Unbindable>,
     zx_status_t EthmacSetParam(uint32_t param, int32_t value, void* data);
     zx_status_t MDIOWrite(uint32_t reg, uint32_t val);
     zx_status_t MDIORead(uint32_t reg, uint32_t* val);
+    zx_handle_t EthmacGetBti();
     int Thread();
 
   private:
@@ -225,6 +226,8 @@ class AmlDWMacDevice : public ddk::Device<AmlDWMacDevice, ddk::Unbindable>,
     uint32_t mtu_ = 0;
     uint8_t mac_[6] = {};
     uint16_t mii_addr_ = 0;
+
+    zx_handle_t bti_;
 
     platform_device_protocol_t pdev_;
 
