@@ -38,6 +38,13 @@ static const pbus_mmio_t vim2_eth_mmios[] = {
     },
 };
 
+static const pbus_bti_t eth_btis[] = {
+    {
+        .iommu_index = 0,
+        .bti_id = 0,
+    },
+};
+
 static pbus_dev_t eth_dev = {
     .name = "ethernet",
     .vid = PDEV_VID_KHADAS,
@@ -47,6 +54,8 @@ static pbus_dev_t eth_dev = {
     .mmio_count = countof(vim2_eth_mmios),
     .gpios = eth_gpios,
     .gpio_count = countof(eth_gpios),
+    .btis = eth_btis,
+    .bti_count = countof(eth_btis),
 };
 
 #if 0
