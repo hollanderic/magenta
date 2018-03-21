@@ -1,4 +1,4 @@
-// Copyright 2017 The Fuchsia Authors. All rights reserved.
+// Copyright 2018 The Fuchsia Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -131,15 +131,15 @@
 #define MAC_MAX_FRAME_SZ    (1600)
 
 typedef volatile struct dw_mac_regs {
-    uint32_t conf;            /* 0x00 */
-    uint32_t framefilt;       /* 0x04 */
-    uint32_t hashtablehigh;   /* 0x08 */
-    uint32_t hashtablelow;    /* 0x0c */
-    uint32_t miiaddr;         /* 0x10 */
-    uint32_t miidata;         /* 0x14 */
-    uint32_t flowcontrol;     /* 0x18 */
-    uint32_t vlantag;         /* 0x1c */
-    uint32_t version;         /* 0x20 */
+    uint32_t conf;            /*0 0x00 */
+    uint32_t framefilt;       /*1 0x04 */
+    uint32_t hashtablehigh;   /*2 0x08 */
+    uint32_t hashtablelow;    /*3 0x0c */
+    uint32_t miiaddr;         /*4 0x10 */
+    uint32_t miidata;         /*5 0x14 */
+    uint32_t flowcontrol;     /*6 0x18 */
+    uint32_t vlantag;         /*7 0x1c */
+    uint32_t version;         /*8 0x20 */
     uint8_t  reserved_1[20];
     uint32_t intreg;          /* 0x38 */
     uint32_t intmask;         /* 0x3c */
@@ -151,20 +151,24 @@ typedef volatile struct dw_mac_regs {
 #define DW_DMA_BASE_OFFSET    (0x1000)
 
 typedef volatile struct dw_dma_regs {
-    uint32_t busmode;         /* 0x00 */
-    uint32_t txpolldemand;    /* 0x04 */
-    uint32_t rxpolldemand;    /* 0x08 */
-    uint32_t rxdesclistaddr;  /* 0x0c */
-    uint32_t txdesclistaddr;  /* 0x10 */
-    uint32_t status;          /* 0x14 */
-    uint32_t opmode;          /* 0x18 */
-    uint32_t intenable;       /* 0x1c */
-    uint32_t reserved[10];
-    uint32_t currhosttxdesc;       /* 0x48 */
-    uint32_t currhostrxdesc;       /* 0x4c */
-    uint32_t currhosttxbuffaddr;   /* 0x50 */
-    uint32_t currhostrxbuffaddr;   /* 0x54 */
-    uint32_t hwfeature;            /* 0x58 */
+    uint32_t busmode;              /*0  0x00 */
+    uint32_t txpolldemand;         /*1  0x04 */
+    uint32_t rxpolldemand;         /*2  0x08 */
+    uint32_t rxdesclistaddr;       /*3  0x0c */
+    uint32_t txdesclistaddr;       /*4  0x10 */
+    uint32_t status;               /*5  0x14 */
+    uint32_t opmode;               /*6  0x18 */
+    uint32_t intenable;            /*7  0x1c */
+    uint32_t missedframes;         /*8  0x20 */
+    uint32_t rxwdt;                /*9  0x24 */
+    uint32_t axibusmode;           /*10 0x28 */
+    uint32_t axistatus;            /*11 0x2c */
+    uint32_t reserved[6];
+    uint32_t currhosttxdesc;       /*18 0x48 */
+    uint32_t currhostrxdesc;       /*19 0x4c */
+    uint32_t currhosttxbuffaddr;   /*20 0x50 */
+    uint32_t currhostrxbuffaddr;   /*21 0x54 */
+    uint32_t hwfeature;            /*22 0x58 */
 } dw_dma_regs_t;
 
 //DMA transaction descriptors
@@ -189,7 +193,7 @@ class AmlDWMacDevice : public ddk::Device<AmlDWMacDevice, ddk::Unbindable>,
     void DdkUnbind();
 
     zx_status_t EthmacQuery(uint32_t options, ethmac_info_t* info);
-    void EthmacStop();
+    void        EthmacStop();
     zx_status_t EthmacStart(fbl::unique_ptr<ddk::EthmacIfcProxy> proxy);
     zx_status_t EthmacQueueTx(uint32_t options, ethmac_netbuf_t* netbuf);
     zx_status_t EthmacSetParam(uint32_t param, int32_t value, void* data);
@@ -202,10 +206,12 @@ class AmlDWMacDevice : public ddk::Device<AmlDWMacDevice, ddk::Unbindable>,
     //zx_status_t UpdateLinkStatus(zx_signals_t observed);
     //zx_status_t Recv(uint8_t* buffer, uint32_t capacity);
     zx_status_t InitBuffers();
+    zx_status_t InitDevice();
+    void DumpRegisters();
     zx_status_t GetMAC(uint8_t* addr);
 
 
-    //Number each of tx/rx transaction descriptor
+    //Number each of tx/rx transaction descriptors
     static constexpr uint32_t kNumDesc_    = 16;
     //Size of each transaction buffer
     static constexpr uint32_t kTxnBufSize_ = 2048;
@@ -216,7 +222,9 @@ class AmlDWMacDevice : public ddk::Device<AmlDWMacDevice, ddk::Unbindable>,
     fbl::VmoMapper dma_buff_mapper_;
 
     uint8_t* tx_buffer_;
+    uint32_t curr_tx_buf_ = 0;
     uint8_t* rx_buffer_;
+    uint32_t curr_rx_buf = 0;
 
     // designware mac options
     uint32_t options_ = 0;

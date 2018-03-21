@@ -1,4 +1,4 @@
-// Copyright 2017 The Fuchsia Authors. All rights reserved.
+// Copyright 2018 The Fuchsia Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -26,8 +26,8 @@
 namespace eth {
 
 enum {
-    MAC_RESET,
-    MAC_INTR,
+    PHY_RESET,
+    PHY_INTR,
 };
 
 int amlmac_device_thread(void* arg) {
@@ -61,7 +61,6 @@ zx_status_t AmlDWMacDevice::Create(zx_device_t* device){
     if (status != ZX_OK) {
         zxlogf(ERROR, "aml-dwmac: Could not create eth device: %d\n", status);
     } else {
-        //mac_device.release(); //release the reference so object persists
         zxlogf(INFO,"aml-dwmac: Added AmLogic dwMac device\n");
     }
 
@@ -120,6 +119,8 @@ zx_status_t AmlDWMacDevice::Create(zx_device_t* device){
     if (status != ZX_OK) return status;
 
 
+
+    // Set up AmLogic system registers associated with the dwmac
     writel( ETH_REG0_RGMII_SEL |
             (1 << ETH_REG0_TX_CLK_PH_POS) |
             (4 << ETH_REG0_TX_CLK_RATIO_POS) |
@@ -130,39 +131,13 @@ zx_status_t AmlDWMacDevice::Create(zx_device_t* device){
     set_bitsl( 1 << 3, mac_device->hhi_regs_ + HHI_GCLK_MPEG1);
     clr_bitsl( (1 << 3) | (1<<2) , mac_device->hhi_regs_ +  HHI_MEM_PD_REG0);
 
-    gpio_write(&mac_device->gpio_, MAC_RESET, 0);
+
+    gpio_write(&mac_device->gpio_, PHY_RESET, 0);
     zx_nanosleep(zx_deadline_after(ZX_MSEC(10)));
-    gpio_write(&mac_device->gpio_, MAC_RESET, 1);
+    gpio_write(&mac_device->gpio_, PHY_RESET, 1);
     zx_nanosleep(zx_deadline_after(ZX_MSEC(10)));
 
-#if 1
-#define PREG(offs)  (*(uint32_t*)(mac_device->periph_regs_ + offs))
-    printf("PER_ETH_REG0 %08x\n",PREG(PER_ETH_REG0));
-    printf("PER_ETH_REG1 %08x\n",PREG(PER_ETH_REG1));
-    printf("PER_ETH_REG2 %08x\n",PREG(PER_ETH_REG2));
-    printf("PER_ETH_REG3 %08x\n",PREG(PER_ETH_REG3));
-    printf("PER_ETH_REG4 %08x\n",PREG(PER_ETH_REG4));
-    uint32_t val;
-    for (uint32_t i=0; i<31; i++) {
-        if (mac_device->MDIORead(i,&val)==ZX_OK) {
-            printf("MII%02u = %08x\n",i,val);
-        } else {
-            printf("MDIO READ TIMEOUT%u\n",i);
-        }
-    }
-    printf("mac addr hi -> %08x\n",mac_device->dwmac_regs_->macaddr0hi);
-    printf("mac addr lo -> %08x\n",mac_device->dwmac_regs_->macaddr0lo);
-    printf("mac version -> %08x\n",mac_device->dwmac_regs_->version);
-    printf("\ndma hwfeature -> %08x\n",mac_device->dwdma_regs_->hwfeature);
-    printf("dma busmode   -> %08x\n",mac_device->dwdma_regs_->busmode);
-    printf("dma status    -> %08x\n",mac_device->dwdma_regs_->status);
-    uint32_t temp;
-    mac_device->MDIORead(1,&temp);
-    printf("MII Status = %08x\n",temp);
-    mac_device->MDIORead(1,&temp);
-    printf("MII Status = %08x\n",temp);
-#undef PREG
-#endif
+    mac_device->DumpRegisters();
 
     int ret = thrd_create_with_name(&mac_device->thread_, amlmac_device_thread,
                                     reinterpret_cast<void*>(&mac_device),
@@ -382,11 +357,37 @@ zx_status_t AmlDWMacDevice::EthmacStart(fbl::unique_ptr<ddk::EthmacIfcProxy> pro
     return ZX_OK;
 }
 
+zx_status_t AmlDWMacDevice::InitDevice() {
+
+
+
+    return ZX_OK;
+}
 
 zx_status_t AmlDWMacDevice::EthmacQueueTx(uint32_t options, ethmac_netbuf_t* netbuf) {
 #if 1
-    //printf("Options: %08x\n",options);
-    //printf("buffer address (%d)%lx\n", netbuf->len, netbuf->phys);
+    printf("Options: %08x\n",options);
+    printf("buffer address (%d)%lx\n", netbuf->len, netbuf->phys);
+    uint8_t* temptr = &tx_buffer_[curr_tx_buf_ * kTxnBufSize_];
+
+    memcpy(temptr, netbuf->data, netbuf->len);
+
+    //Descriptors are pre-iniitialized with the paddr of their corresponding
+    // buffers
+    tx_descriptors_[curr_tx_buf_].dmamac_cntl =
+                                DESC_TXCTRL_TXINT |
+                                DESC_TXCTRL_TXLAST |
+                                DESC_TXCTRL_TXFIRST |
+                                (netbuf->len & DESC_TXCTRL_SIZE1MASK);
+
+    tx_descriptors_[curr_tx_buf_].txrx_status = DESC_TXSTS_OWNBYDMA;
+
+
+    curr_tx_buf_ = (curr_tx_buf_ + 1) % kNumDesc_;
+
+    //Start the transmission
+    dwmac_regs_->txpolldemand = ~0;
+    //ethmac_proxy_->CompleteTx(netbuf, ZX_OK);
     //for (int i=0; i < 16; i++)
     //    printf("%02x ",((uint8_t*)netbuf->data)[i]);
     //printf("\n");
