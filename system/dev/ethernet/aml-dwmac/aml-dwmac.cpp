@@ -23,6 +23,8 @@
 #include <string.h>
 
 #include "aml-dwmac.h"
+#include "dw-gmac-dma.h"
+
 namespace eth {
 
 enum {
@@ -35,10 +37,17 @@ int amlmac_device_thread(void* arg) {
     return device->Thread();
 }
 int AmlDWMacDevice::Thread() {
-    zxlogf(INFO,"Device Thread Started\n");
-    while (true) {
-        zx_nanosleep(zx_deadline_after(ZX_SEC(1)));
+    zxlogf(INFO,"Device Thread Started -- (%p)%x\n",this,this->dma_irq_);
 
+    while (true) {
+        zx_status_t status;
+
+        uint64_t slots;
+        status = zx_interrupt_wait(dma_irq_, &slots);
+        printf("Got an interrupt\n");
+        if (status != ZX_OK) {
+            zxlogf(ERROR,"aml-dwmac: Interrupt error\n");
+        }
     }
 
     return 0;
@@ -69,7 +78,7 @@ zx_status_t AmlDWMacDevice::Create(zx_device_t* device){
         return status;
     }
 
-    gpio_config(&mac_device->gpio_, MAC_RESET, GPIO_DIR_OUT);
+    gpio_config(&mac_device->gpio_, PHY_RESET, GPIO_DIR_OUT);
 
     status = pdev_map_mmio(&mac_device->pdev_, 0,
                             ZX_CACHE_POLICY_UNCACHED_DEVICE,
@@ -105,7 +114,17 @@ zx_status_t AmlDWMacDevice::Create(zx_device_t* device){
         zxlogf(ERROR,"aml-dwmac: could not map hiu mmio: %d\n",status);
         return status;
     }
-    mac_device->dwmac_regs_->macaddr0lo = 0;
+
+
+    status = pdev_map_interrupt(&mac_device->pdev_, 0, &mac_device->dma_irq_);
+    if (status != ZX_OK) {
+        zxlogf(ERROR,"aml-dwmac: could not map dma interrupt\n");
+        return status;
+    } else {
+        printf("IRQ Handle = %x\n",mac_device->dma_irq_);
+    }
+
+
     printf("mac addr hi -> %08x\n",mac_device->dwmac_regs_->macaddr0hi);
     printf("mac addr lo -> %08x\n",mac_device->dwmac_regs_->macaddr0lo);
 
@@ -118,8 +137,6 @@ zx_status_t AmlDWMacDevice::Create(zx_device_t* device){
     status = mac_device->InitBuffers();
     if (status != ZX_OK) return status;
 
-
-
     // Set up AmLogic system registers associated with the dwmac
     writel( ETH_REG0_RGMII_SEL |
             (1 << ETH_REG0_TX_CLK_PH_POS) |
@@ -131,16 +148,18 @@ zx_status_t AmlDWMacDevice::Create(zx_device_t* device){
     set_bitsl( 1 << 3, mac_device->hhi_regs_ + HHI_GCLK_MPEG1);
     clr_bitsl( (1 << 3) | (1<<2) , mac_device->hhi_regs_ +  HHI_MEM_PD_REG0);
 
-
     gpio_write(&mac_device->gpio_, PHY_RESET, 0);
     zx_nanosleep(zx_deadline_after(ZX_MSEC(10)));
     gpio_write(&mac_device->gpio_, PHY_RESET, 1);
     zx_nanosleep(zx_deadline_after(ZX_MSEC(10)));
 
+    mac_device->InitDevice();
     mac_device->DumpRegisters();
 
+    printf("Pointer to mac device  = %p\n",&mac_device);
+
     int ret = thrd_create_with_name(&mac_device->thread_, amlmac_device_thread,
-                                    reinterpret_cast<void*>(&mac_device),
+                                    reinterpret_cast<void*>(mac_device.get()),
                                     "amlmac-thread");
     ZX_DEBUG_ASSERT(ret == thrd_success);
 
@@ -360,18 +379,24 @@ zx_status_t AmlDWMacDevice::EthmacStart(fbl::unique_ptr<ddk::EthmacIfcProxy> pro
 zx_status_t AmlDWMacDevice::InitDevice() {
 
 
+    dwmac_regs_->conf |= (1 << 3);
+    dwdma_regs_->intenable = DMA_INT_NIE | DMA_INT_TIE |
+                             DMA_INT_AIE | DMA_INT_FBE |
+                             DMA_INT_TUE | DMA_INT_TSE;
+    dwdma_regs_->opmode |= (1 << 13);
 
     return ZX_OK;
 }
 
 zx_status_t AmlDWMacDevice::EthmacQueueTx(uint32_t options, ethmac_netbuf_t* netbuf) {
 #if 1
-    printf("Options: %08x\n",options);
-    printf("buffer address (%d)%lx\n", netbuf->len, netbuf->phys);
+    printf("txbuff index = %u   %08x\n",curr_tx_buf_,tx_descriptors_[curr_tx_buf_].dmamac_addr);
+
     uint8_t* temptr = &tx_buffer_[curr_tx_buf_ * kTxnBufSize_];
 
     memcpy(temptr, netbuf->data, netbuf->len);
 
+    zx_cache_flush(temptr, netbuf->len, ZX_CACHE_FLUSH_DATA);
     //Descriptors are pre-iniitialized with the paddr of their corresponding
     // buffers
     tx_descriptors_[curr_tx_buf_].dmamac_cntl =
@@ -381,16 +406,14 @@ zx_status_t AmlDWMacDevice::EthmacQueueTx(uint32_t options, ethmac_netbuf_t* net
                                 (netbuf->len & DESC_TXCTRL_SIZE1MASK);
 
     tx_descriptors_[curr_tx_buf_].txrx_status = DESC_TXSTS_OWNBYDMA;
-
+    zx_cache_flush(&tx_descriptors_[curr_tx_buf_], kTxnBufSize_, ZX_CACHE_FLUSH_DATA);
 
     curr_tx_buf_ = (curr_tx_buf_ + 1) % kNumDesc_;
 
     //Start the transmission
-    dwmac_regs_->txpolldemand = ~0;
-    //ethmac_proxy_->CompleteTx(netbuf, ZX_OK);
-    //for (int i=0; i < 16; i++)
-    //    printf("%02x ",((uint8_t*)netbuf->data)[i]);
-    //printf("\n");
+    dwdma_regs_->txpolldemand = ~0;
+    dwdma_regs_->opmode |= (1 << 13);
+
 #endif
 #if 0
     uint8_t temp_buf[ETHERTAP_MAX_MTU + sizeof(ethertap_socket_header_t)];

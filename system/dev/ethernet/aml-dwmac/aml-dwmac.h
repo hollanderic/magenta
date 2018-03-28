@@ -80,54 +80,6 @@
 #define MII_TPISTATUS   0x1b    /* TPI status for 10mbps       */
 #define MII_NCONFIG     0x1c    /* Network interface config    */
 
-#define DESC_TXSTS_OWNBYDMA        (1 << 31)
-#define DESC_TXSTS_MSK            (0x1FFFF << 0)
-
-/* rx status bits definitions */
-#define DESC_RXSTS_OWNBYDMA        (1 << 31)
-#define DESC_RXSTS_DAFILTERFAIL        (1 << 30)
-#define DESC_RXSTS_FRMLENMSK        (0x3FFF << 16)
-#define DESC_RXSTS_FRMLENSHFT        (16)
-
-#define DESC_RXSTS_ERROR        (1 << 15)
-#define DESC_RXSTS_RXTRUNCATED        (1 << 14)
-#define DESC_RXSTS_SAFILTERFAIL        (1 << 13)
-#define DESC_RXSTS_RXIPC_GIANTFRAME    (1 << 12)
-#define DESC_RXSTS_RXDAMAGED        (1 << 11)
-#define DESC_RXSTS_RXVLANTAG        (1 << 10)
-#define DESC_RXSTS_RXFIRST        (1 << 9)
-#define DESC_RXSTS_RXLAST        (1 << 8)
-#define DESC_RXSTS_RXIPC_GIANT        (1 << 7)
-#define DESC_RXSTS_RXCOLLISION        (1 << 6)
-#define DESC_RXSTS_RXFRAMEETHER        (1 << 5)
-#define DESC_RXSTS_RXWATCHDOG        (1 << 4)
-#define DESC_RXSTS_RXMIIERROR        (1 << 3)
-#define DESC_RXSTS_RXDRIBBLING        (1 << 2)
-#define DESC_RXSTS_RXCRC        (1 << 1)
-
-
-#define DESC_TXCTRL_TXINT        (1 << 31)
-#define DESC_TXCTRL_TXLAST        (1 << 30)
-#define DESC_TXCTRL_TXFIRST        (1 << 29)
-#define DESC_TXCTRL_TXCHECKINSCTRL    (3 << 27)
-#define DESC_TXCTRL_TXCRCDIS        (1 << 26)
-#define DESC_TXCTRL_TXRINGEND        (1 << 25)
-#define DESC_TXCTRL_TXCHAIN        (1 << 24)
-
-#define DESC_TXCTRL_SIZE1MASK        (0x7FF << 0)
-#define DESC_TXCTRL_SIZE1SHFT        (0)
-#define DESC_TXCTRL_SIZE2MASK        (0x7FF << 11)
-#define DESC_TXCTRL_SIZE2SHFT        (11)
-
-#define DESC_RXCTRL_RXINTDIS        (1 << 31)
-#define DESC_RXCTRL_RXRINGEND        (1 << 25)
-#define DESC_RXCTRL_RXCHAIN        (1 << 24)
-
-#define DESC_RXCTRL_SIZE1MASK        (0x7FF << 0)
-#define DESC_RXCTRL_SIZE1SHFT        (0)
-#define DESC_RXCTRL_SIZE2MASK        (0x7FF << 11)
-#define DESC_RXCTRL_SIZE2SHFT        (11)
-
 #define MAC_MAX_FRAME_SZ    (1600)
 
 typedef volatile struct dw_mac_regs {
@@ -210,7 +162,6 @@ class AmlDWMacDevice : public ddk::Device<AmlDWMacDevice, ddk::Unbindable>,
     void DumpRegisters();
     zx_status_t GetMAC(uint8_t* addr);
 
-
     //Number each of tx/rx transaction descriptors
     static constexpr uint32_t kNumDesc_    = 16;
     //Size of each transaction buffer
@@ -228,6 +179,7 @@ class AmlDWMacDevice : public ddk::Device<AmlDWMacDevice, ddk::Unbindable>,
 
     // designware mac options
     uint32_t options_ = 0;
+    uint32_t tester=0;
 
     // ethermac fields
     uint32_t features_ = 0;
@@ -236,6 +188,7 @@ class AmlDWMacDevice : public ddk::Device<AmlDWMacDevice, ddk::Unbindable>,
     uint16_t mii_addr_ = 0;
 
     zx_handle_t bti_;
+    zx_handle_t dma_irq_;
 
     platform_device_protocol_t pdev_;
 
