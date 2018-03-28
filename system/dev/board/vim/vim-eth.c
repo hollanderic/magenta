@@ -23,6 +23,14 @@ static const pbus_gpio_t eth_gpios[] = {
         },
     };
 
+static const pbus_irq_t eth_irqs[] = {
+    {
+        .irq = 40,
+        .mode = ZX_INTERRUPT_MODE_EDGE_HIGH,
+    },
+};
+
+
 static const pbus_mmio_t vim2_eth_mmios[] = {
     {
         .base   = PERIPHS_REG_BASE,
@@ -56,30 +64,9 @@ static pbus_dev_t eth_dev = {
     .gpio_count = countof(eth_gpios),
     .btis = eth_btis,
     .bti_count = countof(eth_btis),
+    .irqs = eth_irqs,
+    .irq_count = countof(eth_irqs),
 };
-
-#if 0
-static const pbus_irq_t i2c_irqs[] = {
-    {
-        .irq = 21 + 32,
-        .mode = ZX_INTERRUPT_MODE_EDGE_HIGH,
-    },
-    {
-        .irq = 214 + 32,
-        .mode = ZX_INTERRUPT_MODE_EDGE_HIGH,
-    },
-    {
-        .irq = 215 + 32,
-        .mode = ZX_INTERRUPT_MODE_EDGE_HIGH,
-    },
-/*
-    {
-        .irq = 39 + 32,
-        .mode = ZX_INTERRUPT_MODE_EDGE_HIGH,
-    },
-*/
-};
-#endif
 
 zx_status_t vim_eth_init(vim_bus_t* bus) {
 
