@@ -19,6 +19,38 @@
 #include <fbl/unique_ptr.h>
 #include <threads.h>
 
+
+/* GMAC Configuration defines */
+#define GMAC_CONTROL_2K 0x08000000  /* IEEE 802.3as 2K packets */
+#define GMAC_CONTROL_TC 0x01000000  /* Transmit Conf. in RGMII/SGMII */
+#define GMAC_CONTROL_WD 0x00800000  /* Disable Watchdog on receive */
+#define GMAC_CONTROL_JD 0x00400000  /* Jabber disable */
+#define GMAC_CONTROL_BE 0x00200000  /* Frame Burst Enable */
+#define GMAC_CONTROL_JE 0x00100000  /* Jumbo frame */
+enum inter_frame_gap {
+    GMAC_CONTROL_IFG_88 = 0x00040000,
+    GMAC_CONTROL_IFG_80 = 0x00020000,
+    GMAC_CONTROL_IFG_40 = 0x000e0000,
+};
+#define GMAC_CONTROL_DCRS   0x00010000  /* Disable carrier sense */
+#define GMAC_CONTROL_PS     0x00008000  /* Port Select 0:GMI 1:MII */
+#define GMAC_CONTROL_FES    0x00004000  /* Speed 0:10 1:100 */
+#define GMAC_CONTROL_DO     0x00002000  /* Disable Rx Own */
+#define GMAC_CONTROL_LM     0x00001000  /* Loop-back mode */
+#define GMAC_CONTROL_DM     0x00000800  /* Duplex Mode */
+#define GMAC_CONTROL_IPC    0x00000400  /* Checksum Offload */
+#define GMAC_CONTROL_DR     0x00000200  /* Disable Retry */
+#define GMAC_CONTROL_LUD    0x00000100  /* Link up/down */
+#define GMAC_CONTROL_ACS    0x00000080  /* Auto Pad/FCS Stripping */
+#define GMAC_CONTROL_DC     0x00000010  /* Deferral Check */
+#define GMAC_CONTROL_TE     0x00000008  /* Transmitter Enable */
+#define GMAC_CONTROL_RE     0x00000004  /* Receiver Enable */
+
+#define GMAC_CORE_INIT (GMAC_CONTROL_JD | GMAC_CONTROL_PS | GMAC_CONTROL_ACS | \
+            GMAC_CONTROL_BE | GMAC_CONTROL_DCRS)
+
+
+
 //ETH_REG0 definitions
 //        (ending in _POS indicates bit position)
 #define ETH_REG0_RGMII_SEL      (1 << 0)
