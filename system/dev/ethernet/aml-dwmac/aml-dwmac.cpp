@@ -139,12 +139,42 @@ zx_status_t AmlDWMacDevice::Create(zx_device_t* device){
     if (status != ZX_OK) return status;
 
     // Set up AmLogic system registers associated with the dwmac
-    writel( ETH_REG0_RGMII_SEL |
+
+/*    writel( ETH_REG0_RGMII_SEL |
             (1 << ETH_REG0_TX_CLK_PH_POS) |
             (4 << ETH_REG0_TX_CLK_RATIO_POS) |
             ETH_REG0_REF_CLK_ENA |
             ETH_REG0_CLK_ENA,
             mac_device->periph_regs_ + PER_ETH_REG0);
+*/
+#define BIT(n) (1 << n)
+#define ETH_REG2_REVERSED BIT(28)
+#define INTERNAL_PHY_ID 0x110181
+#define PHY_ENABLE  BIT(31)
+#define USE_PHY_IP  BIT(30)
+#define CLK_IN_EN   BIT(29)
+#define USE_PHY_MDI BIT(26)
+#define LED_POLARITY  BIT(23)
+#define ETH_REG3_19_RESVERD (0x9 << 16)
+#define CFG_PHY_ADDR (0x8 << 8)
+#define CFG_MODE (0x7 << 4)
+#define CFG_EN_HIGH BIT(3)
+#define ETH_REG3_2_RESERVED 0x7
+    writel(0x1621, mac_device->periph_regs_ + PER_ETH_REG0);
+    writel(0x20000, mac_device->periph_regs_ + PER_ETH_REG1);
+
+    writel(ETH_REG2_REVERSED | INTERNAL_PHY_ID,
+           mac_device->periph_regs_ + PER_ETH_REG2);
+    writel(CLK_IN_EN | ETH_REG3_19_RESVERD  |
+            CFG_PHY_ADDR | CFG_MODE | CFG_EN_HIGH |
+            ETH_REG3_2_RESERVED, mac_device->periph_regs_ + PER_ETH_REG3);
+
+
+
+
+
+
+
 
     set_bitsl( 1 << 3, mac_device->hhi_regs_ + HHI_GCLK_MPEG1);
     clr_bitsl( (1 << 3) | (1<<2) , mac_device->hhi_regs_ +  HHI_MEM_PD_REG0);
@@ -393,6 +423,9 @@ zx_status_t AmlDWMacDevice::InitDevice() {
                              DMA_INT_TUE | DMA_INT_TSE;
 
 
+    dwmac_regs_->conf |= GMAC_CORE_INIT | GMAC_CONTROL_TE;
+
+    dwmac_regs_->conf &= ~GMAC_CONTROL_PS;
 
     dwmac_regs_->conf |= (1 << 3);
 #if 0
