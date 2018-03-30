@@ -4,6 +4,26 @@
 
 #pragma once
 
+
+
+#define CONFIG_DW_GMAC_DEFAULT_DMA_PBL 8
+
+/* Bus mode register definitions */
+#define FIXEDBURST         (1 << 16)
+#define PRIORXTX_41        (3 << 14)
+#define PRIORXTX_31        (2 << 14)
+#define PRIORXTX_21        (1 << 14)
+#define PRIORXTX_11        (0 << 14)
+#define DMA_PBL            (CONFIG_DW_GMAC_DEFAULT_DMA_PBL<<8)
+#define RXHIGHPRIO         (1 << 1)
+#define DMAMAC_SRST        (1 << 0)
+
+#define STOREFORWARD        (1 << 21)
+#define FLUSHTXFIFO        (1 << 20)
+#define TXSTART            (1 << 13)
+#define TXSECONDFRAME        (1 << 2)
+#define RXSTART            (1 << 1)
+
 #define DESC_TXSTS_OWNBYDMA            (1 << 31)
 #define DESC_TXSTS_MSK                 (0x1FFFF << 0)
 
@@ -19,21 +39,21 @@
 #define DESC_RXSTS_RXIPC_GIANTFRAME    (1 << 12)
 #define DESC_RXSTS_RXDAMAGED           (1 << 11)
 #define DESC_RXSTS_RXVLANTAG           (1 << 10)
-#define DESC_RXSTS_RXFIRST             (1 << 9)
-#define DESC_RXSTS_RXLAST              (1 << 8)
-#define DESC_RXSTS_RXIPC_GIANT         (1 << 7)
-#define DESC_RXSTS_RXCOLLISION         (1 << 6)
-#define DESC_RXSTS_RXFRAMEETHER        (1 << 5)
-#define DESC_RXSTS_RXWATCHDOG          (1 << 4)
-#define DESC_RXSTS_RXMIIERROR          (1 << 3)
-#define DESC_RXSTS_RXDRIBBLING         (1 << 2)
-#define DESC_RXSTS_RXCRC               (1 << 1)
+#define DESC_RXSTS_RXFIRST             (1 <<  9)
+#define DESC_RXSTS_RXLAST              (1 <<  8)
+#define DESC_RXSTS_RXIPC_GIANT         (1 <<  7)
+#define DESC_RXSTS_RXCOLLISION         (1 <<  6)
+#define DESC_RXSTS_RXFRAMEETHER        (1 <<  5)
+#define DESC_RXSTS_RXWATCHDOG          (1 <<  4)
+#define DESC_RXSTS_RXMIIERROR          (1 <<  3)
+#define DESC_RXSTS_RXDRIBBLING         (1 <<  2)
+#define DESC_RXSTS_RXCRC               (1 <<  1)
 
 /* tx control bits definitions */
 #define DESC_TXCTRL_TXINT              (1 << 31)
 #define DESC_TXCTRL_TXLAST             (1 << 30)
 #define DESC_TXCTRL_TXFIRST            (1 << 29)
-#define DESC_TXCTRL_TXCHECKINSCTRL     (3 << 27)
+#define DESC_TXCTRL_TXCHECKINSCTRL     (2 << 27)
 #define DESC_TXCTRL_TXCRCDIS           (1 << 26)
 #define DESC_TXCTRL_TXRINGEND          (1 << 25)
 #define DESC_TXCTRL_TXCHAIN            (1 << 24)

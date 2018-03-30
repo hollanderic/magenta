@@ -44,10 +44,11 @@ int AmlDWMacDevice::Thread() {
 
         uint64_t slots;
         status = zx_interrupt_wait(dma_irq_, &slots);
-        printf("Got an interrupt\n");
+        printf("Got an interrupt -- %08x\n",dwdma_regs_->status);
         if (status != ZX_OK) {
             zxlogf(ERROR,"aml-dwmac: Interrupt error\n");
         }
+        dwdma_regs_->status = ~0;
     }
 
     return 0;
@@ -156,7 +157,6 @@ zx_status_t AmlDWMacDevice::Create(zx_device_t* device){
     mac_device->InitDevice();
     mac_device->DumpRegisters();
 
-    printf("Pointer to mac device  = %p\n",&mac_device);
 
     int ret = thrd_create_with_name(&mac_device->thread_, amlmac_device_thread,
                                     reinterpret_cast<void*>(mac_device.get()),
@@ -379,30 +379,76 @@ zx_status_t AmlDWMacDevice::EthmacStart(fbl::unique_ptr<ddk::EthmacIfcProxy> pro
 zx_status_t AmlDWMacDevice::InitDevice() {
 
 
-    dwmac_regs_->conf |= (1 << 3);
+    dwdma_regs_->intenable = 0;
+    dwdma_regs_->busmode = FIXEDBURST | PRIORXTX_41 | DMA_PBL;
+
+    dwdma_regs_->opmode = FLUSHTXFIFO | STOREFORWARD;
+
+
+    dwdma_regs_->opmode |= TXSTART;
+
+
     dwdma_regs_->intenable = DMA_INT_NIE | DMA_INT_TIE |
                              DMA_INT_AIE | DMA_INT_FBE |
                              DMA_INT_TUE | DMA_INT_TSE;
-    dwdma_regs_->opmode |= (1 << 13);
+
+
+
+    dwmac_regs_->conf |= (1 << 3);
+#if 0
+    /* Start up the PHY */
+    if (phy_startup(priv->phydev)) {
+        printf("Could not initialize PHY %s\n",
+               priv->phydev->dev->name);
+        return -1;
+    }
+#ifdef CONFIG_PXP_EMULATOR
+    priv->phydev->link = 1;
+    priv->phydev->speed = 100;
+    priv->phydev->duplex = 1;
+#endif
+    dw_adjust_link(mac_p, priv->phydev);
+
+    if (!priv->phydev->link)
+        return -1;
+
+    writel(readl(&mac_p->conf) | RXENABLE | TXENABLE, &mac_p->conf);
+
+#endif
 
     return ZX_OK;
 }
 
 zx_status_t AmlDWMacDevice::EthmacQueueTx(uint32_t options, ethmac_netbuf_t* netbuf) {
 #if 1
-    printf("txbuff index = %u   %08x\n",curr_tx_buf_,tx_descriptors_[curr_tx_buf_].dmamac_addr);
+    zxlogf(ERROR,"txbuff index = %2u   %08x  %08x %08x\n",curr_tx_buf_,
+                                                    tx_descriptors_[curr_tx_buf_].dmamac_addr,
+                                                    dwdma_regs_->currhosttxdesc,
+                                                    dwdma_regs_->currhosttxbuffaddr);
 
     uint8_t* temptr = &tx_buffer_[curr_tx_buf_ * kTxnBufSize_];
 
     memcpy(temptr, netbuf->data, netbuf->len);
 
     zx_cache_flush(temptr, netbuf->len, ZX_CACHE_FLUSH_DATA);
+#if 0
+    for (int i=0; i<netbuf->len; i++) {
+        if ((temptr[i] >= 32)&&(temptr[i]<127)) {
+            printf("%c",temptr[i]);
+        } else {
+            printf("--%02x--",temptr[i]);
+        }
+    }
+    printf("\n");
+#endif
     //Descriptors are pre-iniitialized with the paddr of their corresponding
     // buffers
     tx_descriptors_[curr_tx_buf_].dmamac_cntl =
                                 DESC_TXCTRL_TXINT |
                                 DESC_TXCTRL_TXLAST |
                                 DESC_TXCTRL_TXFIRST |
+                                DESC_TXCTRL_TXCHAIN |
+                                DESC_TXCTRL_TXCHECKINSCTRL |
                                 (netbuf->len & DESC_TXCTRL_SIZE1MASK);
 
     tx_descriptors_[curr_tx_buf_].txrx_status = DESC_TXSTS_OWNBYDMA;
@@ -411,8 +457,9 @@ zx_status_t AmlDWMacDevice::EthmacQueueTx(uint32_t options, ethmac_netbuf_t* net
     curr_tx_buf_ = (curr_tx_buf_ + 1) % kNumDesc_;
 
     //Start the transmission
-    dwdma_regs_->txpolldemand = ~0;
     dwdma_regs_->opmode |= (1 << 13);
+
+    dwdma_regs_->txpolldemand = ~0;
 
 #endif
 #if 0
