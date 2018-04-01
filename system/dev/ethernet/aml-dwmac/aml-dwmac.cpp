@@ -180,11 +180,18 @@ zx_status_t AmlDWMacDevice::Create(zx_device_t* device){
     clr_bitsl( (1 << 3) | (1<<2) , mac_device->hhi_regs_ +  HHI_MEM_PD_REG0);
 
     gpio_write(&mac_device->gpio_, PHY_RESET, 0);
-    zx_nanosleep(zx_deadline_after(ZX_MSEC(10)));
+    zx_nanosleep(zx_deadline_after(ZX_MSEC(100)));
     gpio_write(&mac_device->gpio_, PHY_RESET, 1);
-    zx_nanosleep(zx_deadline_after(ZX_MSEC(10)));
+    zx_nanosleep(zx_deadline_after(ZX_MSEC(100)));
 
     mac_device->InitDevice();
+    mac_device->MDIOWrite(MII_CTRL1000, 1<<9);
+    uint32_t val;
+    mac_device->MDIORead(MII_BMCR,&val);
+    val |= BMCR_ANENABLE | BMCR_ANRESTART;
+    val &= ~BMCR_ISOLATE;
+    mac_device->MDIOWrite(MII_BMCR,val);
+
     mac_device->DumpRegisters();
 
 
