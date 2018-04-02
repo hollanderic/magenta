@@ -192,6 +192,11 @@ zx_status_t AmlDWMacDevice::Create(zx_device_t* device){
     val &= ~BMCR_ISOLATE;
     mac_device->MDIOWrite(MII_BMCR,val);
 
+    printf("Resetting DMA...\n");
+    mac_device->dwdma_regs_->busmode |= DMAMAC_SRST;
+    while(mac_device->dwdma_regs_->busmode & DMAMAC_SRST) {}
+    printf("DMA Reset complete\n");
+
     mac_device->DumpRegisters();
 
 
@@ -419,22 +424,30 @@ zx_status_t AmlDWMacDevice::InitDevice() {
     dwdma_regs_->intenable = 0;
     dwdma_regs_->busmode = FIXEDBURST | PRIORXTX_41 | DMA_PBL;
 
-    dwdma_regs_->opmode = FLUSHTXFIFO | STOREFORWARD;
+    dwdma_regs_->opmode = STOREFORWARD | ENAFLOWCTL;
+
 
 
     dwdma_regs_->opmode |= TXSTART;
 
 
+    //Enable Interrupts
     dwdma_regs_->intenable = DMA_INT_NIE | DMA_INT_TIE |
                              DMA_INT_AIE | DMA_INT_FBE |
                              DMA_INT_TUE | DMA_INT_TSE;
 
+    uint32_t temp = dwmac_regs_->conf;
+    temp |= GMAC_CORE_INIT;
+    temp &= ~GMAC_CONF_PS;
+    dwmac_regs_->conf = temp;
 
-    dwmac_regs_->conf |= GMAC_CORE_INIT | GMAC_CONTROL_TE;
 
-    dwmac_regs_->conf &= ~GMAC_CONTROL_PS;
+    dwmac_regs_->conf |= GMAC_CONF_TE;
 
-    dwmac_regs_->conf |= (1 << 3);
+    //Wait for Fifo Flush to complete
+    //while (dwdma_regs_->opmode && FLUSHTXFIFO){}
+
+
 #if 0
     /* Start up the PHY */
     if (phy_startup(priv->phydev)) {

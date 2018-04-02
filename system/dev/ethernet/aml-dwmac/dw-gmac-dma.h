@@ -18,11 +18,17 @@
 #define RXHIGHPRIO         (1 << 1)
 #define DMAMAC_SRST        (1 << 0)
 
-#define STOREFORWARD        (1 << 21)
+/* Opmode register */
+#define STOREFORWARD       (1 << 21)
 #define FLUSHTXFIFO        (1 << 20)
 #define TXSTART            (1 << 13)
-#define TXSECONDFRAME        (1 << 2)
+#define ENAFLOWCTL		   (1 << 8)
+#define TXSECONDFRAME      (1 << 2)
 #define RXSTART            (1 << 1)
+
+
+
+
 
 #define DESC_TXSTS_OWNBYDMA            (1 << 31)
 #define DESC_TXSTS_MSK                 (0x1FFFF << 0)
