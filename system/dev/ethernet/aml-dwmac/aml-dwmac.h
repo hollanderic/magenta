@@ -21,33 +21,33 @@
 
 
 /* GMAC Configuration defines */
-#define GMAC_CONTROL_2K 0x08000000  /* IEEE 802.3as 2K packets */
-#define GMAC_CONTROL_TC 0x01000000  /* Transmit Conf. in RGMII/SGMII */
-#define GMAC_CONTROL_WD 0x00800000  /* Disable Watchdog on receive */
-#define GMAC_CONTROL_JD 0x00400000  /* Jabber disable */
-#define GMAC_CONTROL_BE 0x00200000  /* Frame Burst Enable */
-#define GMAC_CONTROL_JE 0x00100000  /* Jumbo frame */
+#define GMAC_CONF_2K 0x08000000  /* IEEE 802.3as 2K packets */
+#define GMAC_CONF_TC 0x01000000  /* Transmit Conf. in RGMII/SGMII */
+#define GMAC_CONF_WD 0x00800000  /* Disable Watchdog on receive */
+#define GMAC_CONF_JD 0x00400000  /* Jabber disable */
+#define GMAC_CONF_BE 0x00200000  /* Frame Burst Enable */
+#define GMAC_CONF_JE 0x00100000  /* Jumbo frame */
 enum inter_frame_gap {
-    GMAC_CONTROL_IFG_88 = 0x00040000,
-    GMAC_CONTROL_IFG_80 = 0x00020000,
-    GMAC_CONTROL_IFG_40 = 0x000e0000,
+    GMAC_CONF_IFG_88 = 0x00040000,
+    GMAC_CONF_IFG_80 = 0x00020000,
+    GMAC_CONF_IFG_40 = 0x000e0000,
 };
-#define GMAC_CONTROL_DCRS   0x00010000  /* Disable carrier sense */
-#define GMAC_CONTROL_PS     0x00008000  /* Port Select 0:GMI 1:MII */
-#define GMAC_CONTROL_FES    0x00004000  /* Speed 0:10 1:100 */
-#define GMAC_CONTROL_DO     0x00002000  /* Disable Rx Own */
-#define GMAC_CONTROL_LM     0x00001000  /* Loop-back mode */
-#define GMAC_CONTROL_DM     0x00000800  /* Duplex Mode */
-#define GMAC_CONTROL_IPC    0x00000400  /* Checksum Offload */
-#define GMAC_CONTROL_DR     0x00000200  /* Disable Retry */
-#define GMAC_CONTROL_LUD    0x00000100  /* Link up/down */
-#define GMAC_CONTROL_ACS    0x00000080  /* Auto Pad/FCS Stripping */
-#define GMAC_CONTROL_DC     0x00000010  /* Deferral Check */
-#define GMAC_CONTROL_TE     0x00000008  /* Transmitter Enable */
-#define GMAC_CONTROL_RE     0x00000004  /* Receiver Enable */
+#define GMAC_CONF_DCRS   0x00010000  /* Disable carrier sense */
+#define GMAC_CONF_PS     0x00008000  /* Port Select 0:GMI 1:MII */
+#define GMAC_CONF_FES    0x00004000  /* Speed 0:10 1:100 */
+#define GMAC_CONF_DO     0x00002000  /* Disable Rx Own */
+#define GMAC_CONF_LM     0x00001000  /* Loop-back mode */
+#define GMAC_CONF_DM     0x00000800  /* Duplex Mode */
+#define GMAC_CONF_IPC    0x00000400  /* Checksum Offload */
+#define GMAC_CONF_DR     0x00000200  /* Disable Retry */
+#define GMAC_CONF_LUD    0x00000100  /* Link up/down */
+#define GMAC_CONF_ACS    0x00000080  /* Auto Pad/FCS Stripping */
+#define GMAC_CONF_DC     0x00000010  /* Deferral Check */
+#define GMAC_CONF_TE     0x00000008  /* Transmitter Enable */
+#define GMAC_CONF_RE     0x00000004  /* Receiver Enable */
 
-#define GMAC_CORE_INIT (GMAC_CONTROL_JD | GMAC_CONTROL_PS | GMAC_CONTROL_ACS | \
-            GMAC_CONTROL_BE | GMAC_CONTROL_DCRS)
+#define GMAC_CORE_INIT (GMAC_CONF_JD | GMAC_CONF_PS | GMAC_CONF_ACS | \
+            GMAC_CONF_BE | GMAC_CONF_DCRS)
 
 
 
@@ -115,32 +115,32 @@ enum inter_frame_gap {
 
 
 /* Basic mode control register. */
-#define BMCR_RESV       0x003f  /* Unused...                   */
+#define BMCR_RESV           0x003f  /* Unused...                   */
 #define BMCR_SPEED1000      0x0040  /* MSB of Speed (1000)         */
-#define BMCR_CTST       0x0080  /* Collision test              */
+#define BMCR_CTST           0x0080  /* Collision test              */
 #define BMCR_FULLDPLX       0x0100  /* Full duplex                 */
 #define BMCR_ANRESTART      0x0200  /* Auto negotiation restart    */
 #define BMCR_ISOLATE        0x0400  /* Isolate data paths from MII */
-#define BMCR_PDOWN      0x0800  /* Enable low power state      */
+#define BMCR_PDOWN          0x0800  /* Enable low power state      */
 #define BMCR_ANENABLE       0x1000  /* Enable auto negotiation     */
 #define BMCR_SPEED100       0x2000  /* Select 100Mbps              */
 #define BMCR_LOOPBACK       0x4000  /* TXD loopback bits           */
-#define BMCR_RESET      0x8000  /* Reset to default state      */
+#define BMCR_RESET          0x8000  /* Reset to default state      */
 #define BMCR_SPEED10        0x0000  /* Select 10Mbps               */
 
 /* Basic mode status register. */
-#define BMSR_ERCAP      0x0001  /* Ext-reg capability          */
-#define BMSR_JCD        0x0002  /* Jabber detected             */
+#define BMSR_ERCAP          0x0001  /* Ext-reg capability          */
+#define BMSR_JCD            0x0002  /* Jabber detected             */
 #define BMSR_LSTATUS        0x0004  /* Link status                 */
 #define BMSR_ANEGCAPABLE    0x0008  /* Able to do auto-negotiation */
-#define BMSR_RFAULT     0x0010  /* Remote fault detected       */
+#define BMSR_RFAULT         0x0010  /* Remote fault detected       */
 #define BMSR_ANEGCOMPLETE   0x0020  /* Auto-negotiation complete   */
-#define BMSR_RESV       0x00c0  /* Unused...                   */
+#define BMSR_RESV           0x00c0  /* Unused...                   */
 #define BMSR_ESTATEN        0x0100  /* Extended Status in R15      */
 #define BMSR_100HALF2       0x0200  /* Can do 100BASE-T2 HDX       */
 #define BMSR_100FULL2       0x0400  /* Can do 100BASE-T2 FDX       */
-#define BMSR_10HALF     0x0800  /* Can do 10mbps, half-duplex  */
-#define BMSR_10FULL     0x1000  /* Can do 10mbps, full-duplex  */
+#define BMSR_10HALF         0x0800  /* Can do 10mbps, half-duplex  */
+#define BMSR_10FULL         0x1000  /* Can do 10mbps, full-duplex  */
 #define BMSR_100HALF        0x2000  /* Can do 100mbps, half-duplex */
 #define BMSR_100FULL        0x4000  /* Can do 100mbps, full-duplex */
 #define BMSR_100BASE4       0x8000  /* Can do 100mbps, 4k packets  */
