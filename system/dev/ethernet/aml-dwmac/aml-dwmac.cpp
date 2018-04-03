@@ -50,21 +50,30 @@ int AmlDWMacDevice::Thread() {
 
         uint32_t stat = dwdma_regs_->status;
         if (stat & DMA_STATUS_GLI) {
+            dwdma_regs_->status |= DMA_STATUS_GLI;
             online_ = dwmac_regs_->rgmiistatus & GMAC_RGMII_STATUS_LNKSTS;
             zxlogf(INFO,"amlmac: Link is now %s\n",online_ ? "up": "down");
         }
         if (stat & DMA_STATUS_RI) {
             zxlogf(INFO,"receive interrupt %08x\n",dwdma_regs_->currhostrxdesc);
+            dwdma_regs_->status |= DMA_STATUS_RI;
+            ProcRxBuffer();
         }
         if (stat & DMA_STATUS_AIS) {
             zxlogf(INFO,"abnormal interrupt\n");
         }
 
-        dwdma_regs_->status = ~0;
+        dwdma_regs_->status |= ( DMA_INT_NIE | DMA_INT_TIE |
+                             DMA_INT_AIE | DMA_INT_FBE |
+                             DMA_INT_TUE | DMA_INT_TSE
+                             );
     }
 
     return 0;
 }
+
+
+
 
 void AmlDWMacDevice::UpdateLinkStatus() {
     uint32_t rgstat = dwmac_regs_->rgmiistatus;
@@ -203,6 +212,7 @@ zx_status_t AmlDWMacDevice::Create(zx_device_t* device){
     mac_device->dwmac_regs_->macaddr0hi = tempmachi;
     mac_device->dwmac_regs_->macaddr0lo = tempmaclo;
 
+    printf("initing the buffers\n");
     status = mac_device->InitBuffers();
     if (status != ZX_OK) return status;
 
@@ -223,7 +233,7 @@ zx_status_t AmlDWMacDevice::InitBuffers() {
 
     fbl::RefPtr<fbl::VmarManager> vmar_mgr;
 
-    constexpr size_t kDescSize = 2 * kNumDesc_ * sizeof(dw_dmadescr);
+    constexpr size_t kDescSize = ROUNDUP(2 * kNumDesc_ * sizeof(dw_dmadescr),PAGE_SIZE);
     //constexpr size_t kDescPages = ROUNDUP(kDescSize, PAGE_SIZE);
 
     constexpr size_t kBufSize = 2 * kNumDesc_ * kTxnBufSize_;
@@ -231,12 +241,18 @@ zx_status_t AmlDWMacDevice::InitBuffers() {
     //create vmar large enough for rx,tx buffers, and rx,tx dma descriptors
     vmar_mgr = fbl::VmarManager::Create(0x100000, nullptr);
 
+    /* Descriptors are mapped uncached.  This is due to a quirk in the dwmac
+        dma engine where status is saved in the descriptor.  This makes it
+        problematic to check the state of a dma transaction via the descriptor
+        while the dma may still be using the descriptor.
+    */
     zx::vmo desc_vmo;
     zx_status_t status = dma_desc_mapper_.CreateAndMap(kDescSize,
                                 ZX_VM_FLAG_PERM_READ | ZX_VM_FLAG_PERM_WRITE,
                                 vmar_mgr,
                                 &desc_vmo,
                                 ZX_RIGHT_READ | ZX_RIGHT_MAP | ZX_RIGHT_WRITE);
+                                //ZX_CACHE_POLICY_UNCACHED);
     if (status != ZX_OK) {
         zxlogf(ERROR,"descriptor buffer create failed %d\n",status);
         return status;
@@ -261,14 +277,14 @@ zx_status_t AmlDWMacDevice::InitBuffers() {
     if (status != ZX_OK) return status;
 
     tx_buffer_ = static_cast<uint8_t*>(dma_buff_mapper_.start());
+
     //rx buffer right after tx
     rx_buffer_ = &tx_buffer_[kBufSize / 2];
 
     tx_descriptors_ = static_cast<dw_dmadescr*>(dma_desc_mapper_.start());
+
     //rx descriptors right after tx
     rx_descriptors_ = &tx_descriptors_[kNumDesc_];
-    memset(tx_descriptors_, 0, kDescSize);
-    zx_cache_flush(tx_descriptors_, kDescSize, ZX_CACHE_FLUSH_DATA);
 
     zx_paddr_t desc_phys[ROUNDUP(kDescSize, PAGE_SIZE) / PAGE_SIZE];
     status = desc_vmo.op_range(ZX_VMO_OP_LOOKUP, 0, kDescSize,
@@ -280,13 +296,13 @@ zx_status_t AmlDWMacDevice::InitBuffers() {
     status = buff_vmo.op_range(ZX_VMO_OP_LOOKUP, 0, kBufSize,
                                 buff_phys, sizeof(buff_phys));
     if (status != ZX_OK) return status;
-
+    printf("lookups done\n");
 
     auto paddr = [](uint idx, size_t stride, zx_paddr_t* paddrs){
         return static_cast<uint32_t>(paddrs[ idx * stride / PAGE_SIZE] +
                                      ((idx * stride) % PAGE_SIZE));
     };
-
+    printf("Initing the descriptors\n");
     // Initialize descriptors. Doing tx and rx all at once
     for (uint i = 0; i < kNumDesc_; i++) {
 
@@ -309,11 +325,11 @@ zx_status_t AmlDWMacDevice::InitBuffers() {
         rx_descriptors_[i].txrx_status = DESC_RXSTS_OWNBYDMA;
     }
 
-    zx_cache_flush(tx_descriptors_, kDescSize, ZX_CACHE_FLUSH_DATA);
+    //zx_cache_flush(tx_descriptors_, kDescSize, ZX_CACHE_FLUSH_DATA);
 
     dwdma_regs_->txdesclistaddr = paddr(0, sizeof(dw_dmadescr),desc_phys);
     dwdma_regs_->rxdesclistaddr = paddr(kNumDesc_, sizeof(dw_dmadescr),desc_phys);
-
+    printf("buffers are done\n");
     return ZX_OK;
 }
 
@@ -453,6 +469,24 @@ zx_status_t AmlDWMacDevice::InitDevice() {
     return ZX_OK;
 }
 
+
+void AmlDWMacDevice::ProcRxBuffer() {
+
+    while (!(rx_descriptors_[curr_rx_buf_].txrx_status & DESC_RXSTS_OWNBYDMA)) {
+        printf("rx status %u - %08x\n",curr_rx_buf_,rx_descriptors_[curr_rx_buf_].txrx_status);
+        printf("rx cntl %08x\n",rx_descriptors_[curr_rx_buf_].dmamac_cntl);
+        rx_descriptors_[curr_rx_buf_].dmamac_cntl =
+                                (MAC_MAX_FRAME_SZ & DESC_RXCTRL_SIZE1MASK) | \
+                                 DESC_RXCTRL_RXCHAIN;
+        rx_descriptors_[curr_rx_buf_].txrx_status = DESC_RXSTS_OWNBYDMA;
+
+        curr_rx_buf_ = (curr_rx_buf_ + 1)%kNumDesc_;
+    }
+
+
+
+}
+
 zx_status_t AmlDWMacDevice::EthmacQueueTx(uint32_t options, ethmac_netbuf_t* netbuf) {
 #if 0
     zxlogf(ERROR,"txbuff index = %2u   %08x  %08x %08x\n",curr_tx_buf_,
@@ -484,7 +518,7 @@ zx_status_t AmlDWMacDevice::EthmacQueueTx(uint32_t options, ethmac_netbuf_t* net
                                 (netbuf->len & DESC_TXCTRL_SIZE1MASK);
 
     tx_descriptors_[curr_tx_buf_].txrx_status = DESC_TXSTS_OWNBYDMA;
-    zx_cache_flush(&tx_descriptors_[curr_tx_buf_], kTxnBufSize_, ZX_CACHE_FLUSH_DATA);
+    //zx_cache_flush(&tx_descriptors_[curr_tx_buf_], kTxnBufSize_, ZX_CACHE_FLUSH_DATA);
 
     //TODO - prevent this from overwriting buffers in queue, but not xmitted yet.
     curr_tx_buf_ = (curr_tx_buf_ + 1) % kNumDesc_;

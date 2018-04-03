@@ -245,7 +245,7 @@ class AmlDWMacDevice : public ddk::Device<AmlDWMacDevice, ddk::Unbindable>,
     uint8_t* tx_buffer_;
     uint32_t curr_tx_buf_ = 0;
     uint8_t* rx_buffer_;
-    uint32_t curr_rx_buf = 0;
+    uint32_t curr_rx_buf_ = 0;
 
     // designware mac options
     uint32_t options_ = 0;
