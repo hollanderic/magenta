@@ -18,17 +18,11 @@
 #define RXHIGHPRIO         (1 << 1)
 #define DMAMAC_SRST        (1 << 0)
 
-/* Opmode register */
-#define STOREFORWARD       (1 << 21)
+#define STOREFORWARD        (1 << 21)
 #define FLUSHTXFIFO        (1 << 20)
 #define TXSTART            (1 << 13)
-#define ENAFLOWCTL		   (1 << 8)
-#define TXSECONDFRAME      (1 << 2)
+#define TXSECONDFRAME        (1 << 2)
 #define RXSTART            (1 << 1)
-
-
-
-
 
 #define DESC_TXSTS_OWNBYDMA            (1 << 31)
 #define DESC_TXSTS_MSK                 (0x1FFFF << 0)
@@ -97,3 +91,11 @@
 #define DMA_INT_TIE                    (1 <<  0)
 
 
+#define DMA_STATUS_GLI                (1 << 26)  /*GMAC Line interface interrupt*/
+#define DMA_STATUS_AIS                (1 << 15)  /*GMAC Abnormal activity*/
+#define DMA_STATUS_RI                 (1 <<  6)  /*GMAC Rx Complete*/
+
+
+
+
+#define GMAC_RGMII_STATUS_LNKSTS       (1 << 3)

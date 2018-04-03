@@ -145,7 +145,6 @@ enum inter_frame_gap {
 #define BMSR_100FULL        0x4000  /* Can do 100mbps, full-duplex */
 #define BMSR_100BASE4       0x8000  /* Can do 100mbps, 4k packets  */
 
-
 #define MAC_MAX_FRAME_SZ    (1600)
 
 typedef volatile struct dw_mac_regs {
@@ -158,11 +157,14 @@ typedef volatile struct dw_mac_regs {
     uint32_t flowcontrol;     /*6 0x18 */
     uint32_t vlantag;         /*7 0x1c */
     uint32_t version;         /*8 0x20 */
-    uint8_t  reserved_1[20];
-    uint32_t intreg;          /* 0x38 */
-    uint32_t intmask;         /* 0x3c */
-    uint32_t macaddr0hi;      /* 0x40 */
-    uint32_t macaddr0lo;      /* 0x44 */
+    uint32_t  reserved_1[5];  /*9 - 13 */
+    uint32_t intreg;          /*14 0x38 */
+    uint32_t intmask;         /*15 0x3c */
+    uint32_t macaddr0hi;      /*16 0x40 */
+    uint32_t macaddr0lo;      /*17 0x44 */
+    uint32_t reserved_2[36];  /*18 - 53 */
+    uint32_t rgmiistatus;     /*54 0xd8 */
+
 } dw_mac_regs_t;
 
 // Offset of DMA regs into dwmac register block
@@ -225,7 +227,9 @@ class AmlDWMacDevice : public ddk::Device<AmlDWMacDevice, ddk::Unbindable>,
     //zx_status_t Recv(uint8_t* buffer, uint32_t capacity);
     zx_status_t InitBuffers();
     zx_status_t InitDevice();
+    void UpdateLinkStatus();
     void DumpRegisters();
+    void ProcRxBuffer();
     zx_status_t GetMAC(uint8_t* addr);
 
     //Number each of tx/rx transaction descriptors
