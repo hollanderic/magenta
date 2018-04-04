@@ -143,6 +143,11 @@ static int vim_start_thread(void* arg) {
         }
     }
 
+    if ((status = vim_eth_init(bus)) != ZX_OK) {
+        zxlogf(ERROR, "vim_eth_init failed: %d\n", status);
+        goto fail;
+    }
+
     return ZX_OK;
 fail:
     zxlogf(ERROR, "vim_start_thread failed, not all devices have been initialized\n");
@@ -198,6 +203,7 @@ static zx_status_t vim_bus_bind(void* ctx, zx_device_t* parent) {
         status = thrd_status_to_zx_status(thrd_rc);
         goto fail;
     }
+
     return ZX_OK;
 
 fail:
