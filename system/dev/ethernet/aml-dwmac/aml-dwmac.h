@@ -17,8 +17,9 @@
 #include <fbl/unique_ptr.h>
 #include <zircon/compiler.h>
 #include <zircon/types.h>
-#include <zx/socket.h>
-#include <zx/vmo.h>
+#include <lib/zx/vmo.h>
+
+#include "pinned-buffer.h"
 
 typedef volatile struct dw_mac_regs {
     uint32_t conf;            /*0 0x00 */
@@ -110,10 +111,17 @@ class AmlDWMacDevice : public ddk::Device<AmlDWMacDevice, ddk::Unbindable>,
     //Size of each transaction buffer
     static constexpr uint32_t kTxnBufSize = 2048;
 
+    //IO Buffers for descriptors and tx/rx buffers
+    io_buffer_t desc_iobuff_;
+    io_buffer_t txn_iobuff_;
+
     dw_dmadescr* tx_descriptors_ = nullptr;
     dw_dmadescr* rx_descriptors_ = nullptr;
     fbl::VmoMapper dma_desc_mapper_;
     fbl::VmoMapper dma_buff_mapper_;
+
+    fbl::RefPtr<PinnedBuffer> txn_buffer_;
+    fbl::RefPtr<PinnedBuffer> desc_buffer_;
 
     uint8_t* tx_buffer_ = nullptr;
     uint32_t curr_tx_buf_ = 0;
@@ -137,11 +145,10 @@ class AmlDWMacDevice : public ddk::Device<AmlDWMacDevice, ddk::Unbindable>,
 
     io_buffer_t periph_regs_iobuff_;
     io_buffer_t hhi_regs_iobuff_;
+    io_buffer_t dwmac_regs_iobuff_;
 
     dw_mac_regs_t* dwmac_regs_ = nullptr;
     dw_dma_regs_t* dwdma_regs_ = nullptr;
-    size_t dwmac_regs_size_;
-    zx::vmo dwmac_regs_vmo_;
 
     gpio_protocol_t gpio_;
 

@@ -20,7 +20,7 @@
 
 #define DMA_OPMODE_RSF       (1 << 25)
 #define DMA_OPMODE_TSF       (1 << 21)
-#define FLUSHTXFIFO        (1 << 20)
+#define FLUSHTXFIFO          (1 << 20)
 #define DMA_OPMODE_ST        (1 << 13)
 #define TXSECONDFRAME        (1 << 2)
 #define DMA_OPMODE_SR        (1 << 1)

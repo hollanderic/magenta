@@ -11,7 +11,9 @@ MODULE_TYPE := driver
 MODULE_SRCS := \
     $(LOCAL_DIR)/binding.c \
     $(LOCAL_DIR)/aml-dwmac.cpp \
-    $(LOCAL_DIR)/aml-dwmac-debug.cpp
+    $(LOCAL_DIR)/aml-dwmac-debug.cpp \
+    $(LOCAL_DIR)/pinned-buffer.cpp
+
 
 MODULE_HEADER_DEPS := \
     system/dev/soc/amlogic

@@ -94,28 +94,25 @@ zx_status_t AmlDWMacDevice::InitPdev() {
 
     gpio_config(&gpio_, PHY_RESET, GPIO_DIR_OUT);
 
+    // Map amlogic peripheral control registers
     status = pdev_map_mmio_buffer(&pdev_, 0, ZX_CACHE_POLICY_UNCACHED_DEVICE,
                                   &periph_regs_iobuff_);
-
     if (status != ZX_OK) {
         zxlogf(ERROR,"aml-dwmac: could not map periph mmio: %d\n",status);
         return status;
     }
-    void* tempptr;
-    status = pdev_map_mmio(&pdev_, 1,
-                            ZX_CACHE_POLICY_UNCACHED_DEVICE,
-                            &tempptr,
-                            &dwmac_regs_size_,
-                            dwmac_regs_vmo_.reset_and_get_address());
+
+    // Map mac control registers and dma control registers
+    status = pdev_map_mmio_buffer(&pdev_, 1, ZX_CACHE_POLICY_UNCACHED_DEVICE,
+                                  &dwmac_regs_iobuff_);
     if (status != ZX_OK) {
         zxlogf(ERROR,"aml-dwmac: could not map dwmac mmio: %d\n",status);
         return status;
     }
-    dwmac_regs_ = static_cast<dw_mac_regs_t*>(tempptr);
-
+    dwmac_regs_ = static_cast<dw_mac_regs_t*>(io_buffer_virt(&dwmac_regs_iobuff_));
     dwdma_regs_ = offset_ptr<dw_dma_regs_t>(dwmac_regs_, DW_DMA_BASE_OFFSET);
 
-
+    // Map HHI regs (clocks and power domains)
     status = pdev_map_mmio_buffer(&pdev_, 2, ZX_CACHE_POLICY_UNCACHED_DEVICE,
                                   &hhi_regs_iobuff_);
     if (status != ZX_OK) {
@@ -123,13 +120,14 @@ zx_status_t AmlDWMacDevice::InitPdev() {
         return status;
     }
 
-
+    // Map dma interrupt
     status = pdev_map_interrupt(&pdev_, 0, &dma_irq_);
     if (status != ZX_OK) {
         zxlogf(ERROR,"aml-dwmac: could not map dma interrupt\n");
         return status;
     }
 
+    // Get our bti
     status = pdev_get_bti(&pdev_, 0, &bti_);
     if (status != ZX_OK) {
         zxlogf(ERROR,"aml-dwmac: could not obtain bti: %d\n",status);
@@ -222,93 +220,46 @@ zx_status_t AmlDWMacDevice::Create(zx_device_t* device){
 
 zx_status_t AmlDWMacDevice::InitBuffers() {
 
+
     fbl::RefPtr<fbl::VmarManager> vmar_mgr;
 
     constexpr size_t kDescSize = ROUNDUP(2 * kNumDesc * sizeof(dw_dmadescr),PAGE_SIZE);
 
     constexpr size_t kBufSize = 2 * kNumDesc * kTxnBufSize;
 
-    //create vmar large enough for rx,tx buffers, and rx,tx dma descriptors
-    vmar_mgr = fbl::VmarManager::Create(0x100000, nullptr);
+    txn_buffer_ = PinnedBuffer::Create(kBufSize, zx::bti(bti_), ZX_CACHE_POLICY_CACHED);
+    desc_buffer_ = PinnedBuffer::Create(kDescSize, zx::bti(bti_), ZX_CACHE_POLICY_UNCACHED);
 
-    /* Descriptors are mapped uncached.  This is due to a quirk in the dwmac
-        dma engine where status is saved in the descriptor.  This makes it
-        problematic to check the state of a dma transaction via the descriptor
-        while the dma may still be using the descriptor.
-    */
-    zx::vmo desc_vmo;
-    zx_status_t status = dma_desc_mapper_.CreateAndMap(kDescSize,
-                                ZX_VM_FLAG_PERM_READ | ZX_VM_FLAG_PERM_WRITE,
-                                vmar_mgr,
-                                &desc_vmo,
-                                ZX_RIGHT_READ | ZX_RIGHT_MAP | ZX_RIGHT_WRITE,
-                                ZX_CACHE_POLICY_UNCACHED);
-    if (status != ZX_OK) {
-        zxlogf(ERROR,"descriptor buffer create failed %d\n",status);
-        return status;
-    }
 
-    zx::vmo buff_vmo;
-    status = dma_buff_mapper_.CreateAndMap(kBufSize,
-                                ZX_VM_FLAG_PERM_READ | ZX_VM_FLAG_PERM_WRITE,
-                                vmar_mgr,
-                                &buff_vmo,
-                                ZX_RIGHT_READ | ZX_RIGHT_MAP | ZX_RIGHT_WRITE);
-    if (status != ZX_OK) {
-        zxlogf(ERROR,"data buffer create failed %d\n",status);
-        return status;
-    }
-
-    // Commit the buffer VMOs to allow access to the physical mapping info
-    status = desc_vmo.op_range(ZX_VMO_OP_COMMIT, 0, kDescSize, nullptr, 0);
-    if (status != ZX_OK) return status;
-
-    status = buff_vmo.op_range(ZX_VMO_OP_COMMIT, 0, kBufSize, nullptr, 0);
-    if (status != ZX_OK) return status;
-
-    tx_buffer_ = static_cast<uint8_t*>(dma_buff_mapper_.start());
-
+    tx_buffer_ = static_cast<uint8_t*>(txn_buffer_->GetBaseAddress());
     zx_cache_flush(tx_buffer_, kBufSize,  ZX_CACHE_FLUSH_DATA | ZX_CACHE_FLUSH_INVALIDATE);
-
     //rx buffer right after tx
     rx_buffer_ = &tx_buffer_[kBufSize / 2];
 
-    tx_descriptors_ = static_cast<dw_dmadescr*>(dma_desc_mapper_.start());
 
+    tx_descriptors_ = static_cast<dw_dmadescr*>(desc_buffer_->GetBaseAddress());
     //rx descriptors right after tx
     rx_descriptors_ = &tx_descriptors_[kNumDesc];
 
-    zx_paddr_t desc_phys[ROUNDUP(kDescSize, PAGE_SIZE) / PAGE_SIZE];
-    status = desc_vmo.op_range(ZX_VMO_OP_LOOKUP, 0, kDescSize,
-                                desc_phys, sizeof(desc_phys));
-    if (status != ZX_OK) return status;
-
-
-    zx_paddr_t buff_phys[ROUNDUP(kBufSize, PAGE_SIZE) / PAGE_SIZE];
-    status = buff_vmo.op_range(ZX_VMO_OP_LOOKUP, 0, kBufSize,
-                                buff_phys, sizeof(buff_phys));
-    if (status != ZX_OK) return status;
-
-    auto paddr = [](uint idx, size_t stride, zx_paddr_t* paddrs){
-        return static_cast<uint32_t>(paddrs[ idx * stride / PAGE_SIZE] +
-                                     ((idx * stride) % PAGE_SIZE));
-    };
+    zx_paddr_t addy;
 
     // Initialize descriptors. Doing tx and rx all at once
     for (uint i = 0; i < kNumDesc; i++) {
 
-        tx_descriptors_[i].dmamac_next = paddr((i+1)%kNumDesc,
-                                               sizeof(dw_dmadescr),
-                                               desc_phys);
-        tx_descriptors_[i].dmamac_addr = paddr(i, kTxnBufSize, buff_phys);
+        desc_buffer_->LookupPhys( ((i + 1) % kNumDesc) * sizeof(dw_dmadescr), &addy);
+        tx_descriptors_[i].dmamac_next = static_cast<uint32_t>(addy);
+
+        txn_buffer_->LookupPhys(i * kTxnBufSize, &addy);
+        tx_descriptors_[i].dmamac_addr = static_cast<uint32_t>(addy);
         tx_descriptors_[i].txrx_status = 0;
         tx_descriptors_[i].dmamac_cntl = DESC_TXCTRL_TXCHAIN;
 
-        rx_descriptors_[i].dmamac_next = paddr((i+1)%kNumDesc + kNumDesc,
-                                               sizeof(dw_dmadescr),
-                                               desc_phys);
+        desc_buffer_->LookupPhys((((i + 1) % kNumDesc) + kNumDesc) * sizeof(dw_dmadescr), &addy);
+        rx_descriptors_[i].dmamac_next = static_cast<uint32_t>(addy);
 
-        rx_descriptors_[i].dmamac_addr = paddr(i + kNumDesc, kTxnBufSize, buff_phys);
+
+        txn_buffer_->LookupPhys((i + kNumDesc) * kTxnBufSize, &addy);
+        rx_descriptors_[i].dmamac_addr = static_cast<uint32_t>(addy);
         rx_descriptors_[i].dmamac_cntl =
                         (MAC_MAX_FRAME_SZ & DESC_RXCTRL_SIZE1MASK) | \
                          DESC_RXCTRL_RXCHAIN;
@@ -316,10 +267,12 @@ zx_status_t AmlDWMacDevice::InitBuffers() {
         rx_descriptors_[i].txrx_status = DESC_RXSTS_OWNBYDMA;
     }
 
-    //zx_cache_flush(tx_descriptors_, kDescSize, ZX_CACHE_FLUSH_DATA);
+    zx_cache_flush(tx_descriptors_, kDescSize, ZX_CACHE_FLUSH_DATA);
 
-    dwdma_regs_->txdesclistaddr = paddr(0, sizeof(dw_dmadescr),desc_phys);
-    dwdma_regs_->rxdesclistaddr = paddr(kNumDesc, sizeof(dw_dmadescr),desc_phys);
+    desc_buffer_->LookupPhys(0, &addy);
+    dwdma_regs_->txdesclistaddr = static_cast<uint32_t>(addy);
+    desc_buffer_->LookupPhys(kNumDesc * sizeof(dw_dmadescr), &addy);
+    dwdma_regs_->rxdesclistaddr = static_cast<uint32_t>(addy);
     return ZX_OK;
 }
 
@@ -375,6 +328,7 @@ AmlDWMacDevice::AmlDWMacDevice(zx_device_t *device)
 AmlDWMacDevice::~AmlDWMacDevice(){
     io_buffer_release(&periph_regs_iobuff_);
     io_buffer_release(&hhi_regs_iobuff_);
+    io_buffer_release(&dwmac_regs_iobuff_);
 }
 
 void AmlDWMacDevice::DdkRelease() {
@@ -383,7 +337,7 @@ void AmlDWMacDevice::DdkRelease() {
 }
 
 void AmlDWMacDevice::DdkUnbind() {
-    printf("DdkUnbind\n");
+    zxlogf(INFO,"AmLogic Ethmac DdkUnbind\n");
     //TODO - signal Thread to shutdown
     //fbl::AutoLock lock(&lock_);
 }
