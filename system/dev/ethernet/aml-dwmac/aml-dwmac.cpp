@@ -51,6 +51,7 @@ int AmlDWMacDevice::Thread() {
         }
         uint32_t stat = dwdma_regs_->status;
         dwdma_regs_->status = stat;
+        printf("stat=%08x\n",stat);
         if (stat & DMA_STATUS_GLI) {
             fbl::AutoLock lock(&lock_); //Note: limited scope of autolock
             UpdateLinkStatus();
@@ -60,9 +61,10 @@ int AmlDWMacDevice::Thread() {
         }
         if (stat & DMA_STATUS_AIS) {
             bus_errors_++;
-            zxlogf(ERROR, "aml-dwmac: abnormal interrupt\n");
+            zxlogf(ERROR, "aml-dwmac: abnormal interrupt %08x\n",stat);
         }
         if (stat & DMA_STATUS_TI) {
+            tx_counter_++;
             /* Any handling of TX complete interrupts should be
                placed here.  Leaving in for reference.
             */
@@ -77,6 +79,8 @@ void AmlDWMacDevice::UpdateLinkStatus() {
         online_ = temp;
         if (ethmac_proxy_ != nullptr) {
             ethmac_proxy_->Status(online_ ? ETH_STATUS_ONLINE : 0u);
+        } else {
+            zxlogf(ERROR,"System not ready\n");
         }
     }
     zxlogf(INFO, "aml-dwmac: Link is now %s\n", online_ ? "up" : "down");
@@ -239,7 +243,7 @@ zx_status_t AmlDWMacDevice::InitBuffers() {
 
     fbl::RefPtr<fbl::VmarManager> vmar_mgr;
 
-    constexpr size_t kDescSize = ROUNDUP(2 * kNumDesc * sizeof(dw_dmadescr), PAGE_SIZE);
+    constexpr size_t kDescSize = ROUNDUP(2 * kNumDesc * sizeof(dw_dmadescr_t), PAGE_SIZE);
 
     constexpr size_t kBufSize = 2 * kNumDesc * kTxnBufSize;
 
@@ -251,7 +255,7 @@ zx_status_t AmlDWMacDevice::InitBuffers() {
     //rx buffer right after tx
     rx_buffer_ = &tx_buffer_[kBufSize / 2];
 
-    tx_descriptors_ = static_cast<dw_dmadescr*>(desc_buffer_->GetBaseAddress());
+    tx_descriptors_ = static_cast<dw_dmadescr_t*>(desc_buffer_->GetBaseAddress());
     //rx descriptors right after tx
     rx_descriptors_ = &tx_descriptors_[kNumDesc];
 
@@ -260,7 +264,7 @@ zx_status_t AmlDWMacDevice::InitBuffers() {
     // Initialize descriptors. Doing tx and rx all at once
     for (uint i = 0; i < kNumDesc; i++) {
 
-        desc_buffer_->LookupPhys(((i + 1) % kNumDesc) * sizeof(dw_dmadescr), &tmpaddr);
+        desc_buffer_->LookupPhys(((i + 1) % kNumDesc) * sizeof(dw_dmadescr_t), &tmpaddr);
         tx_descriptors_[i].dmamac_next = static_cast<uint32_t>(tmpaddr);
 
         txn_buffer_->LookupPhys(i * kTxnBufSize, &tmpaddr);
@@ -268,7 +272,7 @@ zx_status_t AmlDWMacDevice::InitBuffers() {
         tx_descriptors_[i].txrx_status = 0;
         tx_descriptors_[i].dmamac_cntl = DESC_TXCTRL_TXCHAIN;
 
-        desc_buffer_->LookupPhys((((i + 1) % kNumDesc) + kNumDesc) * sizeof(dw_dmadescr), &tmpaddr);
+        desc_buffer_->LookupPhys((((i + 1) % kNumDesc) + kNumDesc) * sizeof(dw_dmadescr_t), &tmpaddr);
         rx_descriptors_[i].dmamac_next = static_cast<uint32_t>(tmpaddr);
 
         txn_buffer_->LookupPhys((i + kNumDesc) * kTxnBufSize, &tmpaddr);
@@ -282,7 +286,9 @@ zx_status_t AmlDWMacDevice::InitBuffers() {
 
     desc_buffer_->LookupPhys(0, &tmpaddr);
     dwdma_regs_->txdesclistaddr = static_cast<uint32_t>(tmpaddr);
-    desc_buffer_->LookupPhys(kNumDesc * sizeof(dw_dmadescr), &tmpaddr);
+    printf("tx desc = %08lx\n",tmpaddr);
+
+    desc_buffer_->LookupPhys(kNumDesc * sizeof(dw_dmadescr_t), &tmpaddr);
     dwdma_regs_->rxdesclistaddr = static_cast<uint32_t>(tmpaddr);
     return ZX_OK;
 }
@@ -401,36 +407,60 @@ void AmlDWMacDevice::EthmacStop() {
 
 zx_status_t AmlDWMacDevice::EthmacStart(fbl::unique_ptr<ddk::EthmacIfcProxy> proxy) {
     fbl::AutoLock lock(&lock_);
+
     if (ethmac_proxy_ != nullptr) {
         zxlogf(ERROR, "aml_dwmac:  Already bound!!!");
         return ZX_ERR_ALREADY_BOUND;
     } else {
         ethmac_proxy_ = fbl::move(proxy);
         UpdateLinkStatus();
+        zxlogf(INFO,"aml_dwmac: Started\n");
     }
     return ZX_OK;
 }
 
 zx_status_t AmlDWMacDevice::InitDevice() {
+    zxlogf(INFO,"currdescbuffer = %08x\n",dwdma_regs_->currhosttxdesc);
 
     dwdma_regs_->intenable = 0;
     dwdma_regs_->busmode = FIXEDBURST | PRIORXTX_41 | DMA_PBL;
 
-    dwdma_regs_->opmode = DMA_OPMODE_TSF | DMA_OPMODE_RSF;
+    dwdma_regs_->opmode = //DMA_OPMODE_EFC    | DMA_OPMODE_TTC(3) |
+                          //DMA_OPMODE_RFD(3) | DMA_OPMODE_RFA(1) |
+                          //DMA_OPMODE_FEF    | DMA_OPMODE_RTC(3) |
+                          DMA_OPMODE_TSF | DMA_OPMODE_RSF;
+
     dwdma_regs_->opmode |= DMA_OPMODE_SR | DMA_OPMODE_ST; //start tx and rx
 
-    //TODO - configure filters
-    dwmac_regs_->framefilt |= (1 << 31); //pass all for now
+    //Clear all the interrupt flags
+    dwdma_regs_->status = ~0;
 
     //Enable Interrupts
     dwdma_regs_->intenable = DMA_INT_NIE | DMA_INT_TIE |
                              DMA_INT_AIE | DMA_INT_FBE |
-                             DMA_INT_RIE;
+                             DMA_INT_RIE | DMA_INT_RUE |
+                             DMA_INT_RWE | DMA_INT_OVE |
+                             DMA_INT_UNE | DMA_INT_TSE;
 
-    uint32_t temp = dwmac_regs_->conf;
-    temp |= GMAC_CORE_INIT | GMAC_CONF_TE | GMAC_CONF_RE;
-    temp &= ~GMAC_CONF_PS;
-    dwmac_regs_->conf = temp;
+    dwmac_regs_->macaddr1lo = 0;
+    dwmac_regs_->macaddr1hi = 0;
+    //dwmac_regs_->hashtablehigh = 0xffffffff;
+    //dwmac_regs_->hashtablelow = 0xffffffff;
+    //TODO - configure filters
+    zxlogf(INFO,"framefilt = %08x\n",dwmac_regs_->framefilt);
+    zxlogf(INFO,"macaddr0hi = %08x\n",dwmac_regs_->macaddr0hi);
+    zxlogf(INFO,"macaddr0lo = %08x\n",dwmac_regs_->macaddr0lo);
+
+    dwmac_regs_->framefilt |= (1 << 10) | (1 << 4) | (1); //pass all for now
+
+    //dwmac_regs_->flowcontrol = GMAC_FLOW_TFE | GMAC_FLOW_RFE | GMAC_FLOW_UP;
+
+    dwmac_regs_->conf = GMAC_CORE_INIT;
+
+    dwmac_regs_->conf |=  GMAC_CONF_TE | GMAC_CONF_RE;
+
+    zxlogf(INFO,"currdescbuffer = %08x\n",dwdma_regs_->currhosttxdesc);
+    zxlogf(INFO,"hardware features =  %08x\n",dwdma_regs_->hwfeature);
 
     return ZX_OK;
 }
@@ -452,31 +482,40 @@ zx_status_t AmlDWMacDevice::DeInitDevice() {
 }
 
 void AmlDWMacDevice::ProcRxBuffer(uint32_t int_status) {
-
     while (true) {
         uint32_t pkt_stat = rx_descriptors_[curr_rx_buf_].txrx_status;
+        zxlogf(INFO,"%5u %08x %08x\n",curr_rx_buf_, pkt_stat,dwdma_regs_->currhostrxdesc);
+      //  zx_time_t st = zx_clock_get(ZX_CLOCK_MONOTONIC);
 
         if (pkt_stat & DESC_RXSTS_OWNBYDMA) {
-            break;
+            return;
         }
-
-        rx_descriptors_[curr_rx_buf_].dmamac_cntl =
-            (MAC_MAX_FRAME_SZ & DESC_RXCTRL_SIZE1MASK) |
-            DESC_RXCTRL_RXCHAIN;
+        size_t fr_len = (pkt_stat & DESC_RXSTS_FRMLENMSK) >> DESC_RXSTS_FRMLENSHFT;
+        //rx_descriptors_[curr_rx_buf_].dmamac_cntl =
+        //    (MAC_MAX_FRAME_SZ & DESC_RXCTRL_SIZE1MASK) |
+        //    DESC_RXCTRL_RXCHAIN;
+        //zxlogf(INFO,"proc rx %2u  %4lu  %08x\n",curr_rx_buf_,fr_len,pkt_stat);
+        uint8_t* temptr = &rx_buffer_[curr_rx_buf_ * kTxnBufSize];
         do { // limit scope of autolock
             fbl::AutoLock lock(&lock_);
-            if (ethmac_proxy_ != nullptr) {
+            if ((ethmac_proxy_ != nullptr)) {
 
-                size_t fr_len = (pkt_stat & DESC_RXSTS_FRMLENMSK) >> DESC_RXSTS_FRMLENSHFT;
-
-                uint8_t* temptr = &rx_buffer_[curr_rx_buf_ * kTxnBufSize];
-
-                ethmac_proxy_->Recv(temptr, fr_len - 4, 0);
+                ethmac_proxy_->Recv(temptr, fr_len, 0);
                 //Flush/Invalidate in preparation for next use of this buffer
-                zx_cache_flush(temptr, kTxnBufSize, ZX_CACHE_FLUSH_DATA | ZX_CACHE_FLUSH_INVALIDATE);
+
+            } else {
+                zxlogf(ERROR,"Dropping bad packet\n");
             }
         } while (false);
+        zx_cache_flush(temptr, kTxnBufSize, ZX_CACHE_FLUSH_DATA | ZX_CACHE_FLUSH_INVALIDATE);
         rx_descriptors_[curr_rx_buf_].txrx_status = DESC_RXSTS_OWNBYDMA;
+        rx_packet_++;
+        //if ((dwdma_regs_->missedframes != 0) || (rx_packet_%500 == 0)) {
+        //    printf("rx packet=%5u   rx desc=%08x  %08x\n",rx_packet_, dwdma_regs_->currhostrxdesc,
+        //        dwdma_regs_->missedframes);
+       // }
+       // printf("t=%lu  %u\n",zx_clock_get(ZX_CLOCK_MONOTONIC) - st,curr_rx_buf_);
+
         curr_rx_buf_ = (curr_rx_buf_ + 1) % kNumDesc;
     }
 }
@@ -490,22 +529,36 @@ zx_status_t AmlDWMacDevice::EthmacQueueTx(uint32_t options, ethmac_netbuf_t* net
     if (netbuf->len > kTxnBufSize) {
         return ZX_ERR_INVALID_ARGS;
     }
+    if (tx_descriptors_[curr_tx_buf_].txrx_status & DESC_TXSTS_OWNBYDMA) {
+        zxlogf(ERROR,"TX buffer overrun@ %u\n",curr_tx_buf_);
+        return ZX_ERR_UNAVAILABLE;
+    }
+    if (netbuf->len < 60) {
+        zxlogf(INFO,"Small packet\n");
+    }
+    //zxlogf(INFO,"QueueTx %2u  %4u  %08x\n",curr_tx_buf_,netbuf->len, tx_descriptors_[curr_tx_buf_].txrx_status);
     uint8_t* temptr = &tx_buffer_[curr_tx_buf_ * kTxnBufSize];
 
     memcpy(temptr, netbuf->data, netbuf->len);
+
+    //if ((temptr[0x36]==0x82) && (temptr[0x37]==0x3c))
+    if(false){
+        printf("%5d %08x   %02x%02x  %08x %08x\n",tx_counter_,dwdma_regs_->status,
+            temptr[0x3f],temptr[0x3e],dwdma_regs_->currhosttxdesc,
+            tx_descriptors_[curr_tx_buf_].txrx_status);
+    }
 
     zx_cache_flush(temptr, netbuf->len, ZX_CACHE_FLUSH_DATA);
 
     //Descriptors are pre-iniitialized with the paddr of their corresponding
     // buffers
-    tx_descriptors_[curr_tx_buf_].txrx_status = DESC_TXSTS_OWNBYDMA;
     tx_descriptors_[curr_tx_buf_].dmamac_cntl =
         DESC_TXCTRL_TXINT |
         DESC_TXCTRL_TXLAST |
         DESC_TXCTRL_TXFIRST |
         DESC_TXCTRL_TXCHAIN |
         (netbuf->len & DESC_TXCTRL_SIZE1MASK);
-
+    tx_descriptors_[curr_tx_buf_].txrx_status = DESC_TXSTS_OWNBYDMA;
     //TODO - prevent this from overwriting buffers in queue, but not xmitted yet.
     curr_tx_buf_ = (curr_tx_buf_ + 1) % kNumDesc;
 
@@ -515,8 +568,8 @@ zx_status_t AmlDWMacDevice::EthmacQueueTx(uint32_t options, ethmac_netbuf_t* net
 }
 
 zx_status_t AmlDWMacDevice::EthmacSetParam(uint32_t param, int32_t value, void* data) {
-
-    return ZX_ERR_NOT_SUPPORTED;
+    zxlogf(INFO,"SetParam called  %x  %x\n",param,value);
+    return ZX_OK;
 }
 
 } // namespace eth

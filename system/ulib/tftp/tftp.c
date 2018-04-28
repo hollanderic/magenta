@@ -1141,6 +1141,7 @@ static tftp_status tftp_msg_loop(tftp_session* session,
                                &timeout_ms,
                                file_cookie);
         if (out_sz) {
+            printf("sending out_sz =%lu\n",out_sz);
             send_status = session->transport_interface.send(opts->outgoing, out_sz,
                                                             transport_cookie);
             if (send_status != TFTP_NO_ERROR) {

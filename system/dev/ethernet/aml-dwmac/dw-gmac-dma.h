@@ -18,10 +18,17 @@
 
 #define DMA_OPMODE_RSF       (1 << 25)
 #define DMA_OPMODE_TSF       (1 << 21)
-#define FLUSHTXFIFO          (1 << 20)
+#define DMA_OPMODE_FTF       (1 << 20)
 #define DMA_OPMODE_ST        (1 << 13)
-#define TXSECONDFRAME        (1 << 2)
+#define DMA_OPMODE_EFC       (1 << 8)
+#define DMA_OPMODE_FEF       (1 << 7)
 #define DMA_OPMODE_SR        (1 << 1)
+
+#define DMA_OPMODE_RFD(val)  (((val & 0x3) << 11) | ((val & 0x4) << 20))
+#define DMA_OPMODE_RFA(val)  (((val & 0x3) <<  9) | ((val & 0x4) << 21))
+#define DMA_OPMODE_TTC(val)   ((val & 0x7) << 14)
+#define DMA_OPMODE_RTC(val)   ((val & 0x3) <<  3)
+
 
 #define DESC_TXSTS_OWNBYDMA            (1 << 31)
 #define DESC_TXSTS_MSK                 (0x1FFFF << 0)
@@ -73,14 +80,14 @@
 #define DESC_RXCTRL_SIZE2SHFT          (11)
 
 /*DMA interrupt enable bits */
-#define DMA_INT_NIE                    (1 << 16)
-#define DMA_INT_AIE                    (1 << 15)
-#define DMA_INT_ERE                    (1 << 14)
-#define DMA_INT_FBE                    (1 << 13)
-#define DMA_INT_ETE                    (1 << 10)
-#define DMA_INT_RWE                    (1 <<  9)
-#define DMA_INT_RSE                    (1 <<  8)
-#define DMA_INT_RUE                    (1 <<  7)
+#define DMA_INT_NIE                    (1 << 16)  /* Normal Interrupt Enable */
+#define DMA_INT_AIE                    (1 << 15)  /* Abnormal Interrupt Enable */
+#define DMA_INT_ERE                    (1 << 14)  /* Early Rx */
+#define DMA_INT_FBE                    (1 << 13)  /* Fatal Bus Error */
+#define DMA_INT_ETE                    (1 << 10)  /* Early Tx */
+#define DMA_INT_RWE                    (1 <<  9)  /* Rx Watchdog */
+#define DMA_INT_RSE                    (1 <<  8)  /* Rx Stopped */
+#define DMA_INT_RUE                    (1 <<  7)  /* Rx Buffer Unavailable */
 #define DMA_INT_RIE                    (1 <<  6)
 #define DMA_INT_UNE                    (1 <<  5)
 #define DMA_INT_OVE                    (1 <<  4)
@@ -93,7 +100,7 @@
 #define DMA_STATUS_GLI                (1 << 26)  /*GMAC Line interface interrupt*/
 #define DMA_STATUS_AIS                (1 << 15)  /*GMAC Abnormal activity*/
 #define DMA_STATUS_RI                 (1 <<  6)  /*GMAC Rx Complete*/
-#define DMA_STATUS_TI                 (1 <<  0)
+#define DMA_STATUS_TI                 (1 <<  0)  /*Tx Complete */
 
 #define GMAC_RGMII_STATUS_LNKSTS       (1 << 3)
 
@@ -139,8 +146,13 @@ enum inter_frame_gap {
 #define GMAC_CONF_TE     0x00000008  /* Transmitter Enable */
 #define GMAC_CONF_RE     0x00000004  /* Receiver Enable */
 
-#define GMAC_CORE_INIT (GMAC_CONF_JD | GMAC_CONF_PS | GMAC_CONF_ACS | \
-            GMAC_CONF_BE | GMAC_CONF_DCRS | GMAC_CONF_DM)
+#define GMAC_CORE_INIT (GMAC_CONF_JD | \
+            GMAC_CONF_DM)
+
+
+#define GMAC_FLOW_TFE    (1 <<  1)
+#define GMAC_FLOW_RFE    (1 <<  2)
+#define GMAC_FLOW_UP     (1 <<  3)
 
 
 

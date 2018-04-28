@@ -37,7 +37,9 @@ typedef volatile struct dw_mac_regs {
     uint32_t intmask;         /*15 0x3c */
     uint32_t macaddr0hi;      /*16 0x40 */
     uint32_t macaddr0lo;      /*17 0x44 */
-    uint32_t reserved_2[36];  /*18 - 53 */
+    uint32_t macaddr1hi;      /*18 0x48 */
+    uint32_t macaddr1lo;      /*19 0x4c */
+    uint32_t reserved_2[34];  /*18 - 53 */
     uint32_t rgmiistatus;     /*54 0xd8 */
 } __PACKED dw_mac_regs_t;
 
@@ -66,12 +68,12 @@ typedef volatile struct dw_dma_regs {
 } __PACKED dw_dma_regs_t;
 
 //DMA transaction descriptors
-struct dw_dmadescr {
+typedef volatile struct dw_dmadescr {
     uint32_t txrx_status;
     uint32_t dmamac_cntl;
     uint32_t dmamac_addr;
     uint32_t dmamac_next;
-} __ALIGNED(64);
+} __ALIGNED(64) dw_dmadescr_t;
 
 
 namespace eth {
@@ -110,12 +112,12 @@ class AmlDWMacDevice : public ddk::Device<AmlDWMacDevice, ddk::Unbindable>,
     zx_status_t GetMAC(uint8_t* addr);
 
     //Number each of tx/rx transaction descriptors
-    static constexpr uint32_t kNumDesc    = 16;
+    static constexpr uint32_t kNumDesc    = 64;
     //Size of each transaction buffer
     static constexpr uint32_t kTxnBufSize = 2048;
 
-    dw_dmadescr* tx_descriptors_ = nullptr;
-    dw_dmadescr* rx_descriptors_ = nullptr;
+    dw_dmadescr_t* tx_descriptors_ = nullptr;
+    dw_dmadescr_t* rx_descriptors_ = nullptr;
 
     fbl::RefPtr<PinnedBuffer> txn_buffer_;
     fbl::RefPtr<PinnedBuffer> desc_buffer_;
@@ -156,6 +158,8 @@ class AmlDWMacDevice : public ddk::Device<AmlDWMacDevice, ddk::Unbindable>,
 
     //statistics
     uint32_t bus_errors_;
+    uint32_t tx_counter_=0;
+    uint32_t rx_packet_=0;
 
     fbl::atomic<bool> running_;
     thrd_t thread_;
