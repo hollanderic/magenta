@@ -27,11 +27,14 @@ typedef struct {
     iommu_protocol_t iommu;
 } aml_bus_t;
 
-// aml-gpio.c
+// astro-gpio.c
 zx_status_t aml_gpio_init(aml_bus_t* bus);
 
-// aml-i2c.c
+// astro-i2c.c
 zx_status_t aml_i2c_init(aml_bus_t* bus);
 
-// aml-usb.c
+// astro-usb.c
 zx_status_t aml_usb_init(aml_bus_t* bus);
+
+// astro-touch.c
+zx_status_t astro_touch_init(aml_bus_t* bus);
