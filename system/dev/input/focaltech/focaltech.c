@@ -103,6 +103,31 @@ static zx_status_t focaltech_bind(void* ctx, zx_device_t* parent) {
         zxlogf(ERROR,"focaltech-touch: failed to acquire i2c\n");
         return res;
     }
+/*
+    zxlogf(INFO,"ID_G_CHIPER_LOW(%02x) = %02x\n",0x9f,i2c_read(i2c,0x9f));
+    zxlogf(INFO,"ID_G_TYPE      (%02x) = %02x\n",0xa0,i2c_read(i2c,0xa0));
+    zxlogf(INFO,"ID_G_LIB_VHI   (%02x) = %02x\n",0xa1,i2c_read(i2c,0xa1));
+    zxlogf(INFO,"ID_G_LIB_VLO   (%02x) = %02x\n",0xa2,i2c_read(i2c,0xa2));
+
+    zxlogf(INFO,"ID_G_CHIPER_HI (%02x) = %02x\n",0xa3,i2c_read(i2c,0xa3));
+
+    zxlogf(INFO,"ID_G_TYPE      (%02x) = %02x\n",0xa0,i2c_read(i2c,0xa0));
+*/
+
+    uint8_t buf[1024];
+    uint8_t tbuf[2];
+    tbuf[0] = 0x01;
+    tbuf[1] = 0x00;
+    i2c_transact_sync(i2c,0,tbuf,2,buf,0);
+    tbuf[0] = 0x00;
+    i2c_transact_sync(i2c,0,tbuf,1,buf,32);
+    for(int i=0; i<32; i++) {
+        zxlogf(INFO,"REG 0x%02x = %02x\n",i,buf[i]);
+    }
+    for(int i=0; i<17; i++) {
+        zxlogf(INFO,"REG 0x%02x = %02x\n",0x9f+i,i2c_read(i2c,0x9f+i));
+    }
+/*
     uint8_t tbuf[5];
     uint8_t rbuf[5];
     tbuf[0] = FTS_REG_CHIP_ID;
@@ -130,11 +155,12 @@ static zx_status_t focaltech_bind(void* ctx, zx_device_t* parent) {
 
     zxlogf(INFO,"HID DESC = %02x %02x  %02x  %02x\n",rbuf[0],rbuf[1],rbuf[2],rbuf[3]);
 
+
     thrd_t testthread;
     thrd_create_with_name(&testthread, test_thread,
                                     i2c,
                                     "touch-thread");
-
+*/
 
     zxlogf(INFO,"Exiting focaltech bind\n");
     return ZX_OK;
