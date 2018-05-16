@@ -8,10 +8,15 @@ MODULE := $(LOCAL_DIR)
 
 MODULE_TYPE := driver
 
-MODULE_SRCS := $(LOCAL_DIR)/focaltech.c
+MODULE_SRCS := \
+    $(LOCAL_DIR)/focaltech.c \
+	$(LOCAL_DIR)/ft3x27.cpp \
 
 MODULE_STATIC_LIBS := \
 	system/ulib/ddk \
+    system/ulib/ddktl \
+	system/ulib/zxcpp \
+    system/ulib/fbl \
 	system/ulib/zx \
 	system/ulib/sync \
 	system/ulib/hid
