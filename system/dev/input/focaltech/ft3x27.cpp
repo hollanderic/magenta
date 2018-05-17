@@ -18,20 +18,25 @@
 
 #include "ft3x27.h"
 
-namespace ft{
+namespace ft {
+
 Ft3x27Device::Ft3x27Device(zx_device_t* device)
     : ddk::Device<Ft3x27Device, ddk::Unbindable>(device) {
 }
+void Ft3x27Device::ParseReport(ft_finger_t* rpt, uint8_t* buf) {
+    rpt->evt = static_cast<uint8_t>(buf[0] >> 6);
+    rpt->x = static_cast<uint16_t>(((buf[0] & 0x0f) << 8) + buf[1]);
+    rpt->y = static_cast<uint16_t>(((buf[2] & 0x0f) << 8) + buf[3]);
+    rpt->id = static_cast<uint8_t>(buf[2] >> 4);
+}
+
+
 int Ft3x27Device::TestThread() {
     while (true) {
         zx_nanosleep(zx_deadline_after(ZX_MSEC(100)));
         zxlogf(INFO,"%02x\n",Read(0x02));
-        //zxlogf(INFO,"Gesture = %02x\n",i2c_read(i2c,0x01));
-        //zxlogf(INFO,"CurPoints = %2u\n",i2c_read(i2c,0x02));
-        //zxlogf(INFO,"....\n");
     }
     return 0;
-
 }
 
 int Ft3x27Device::Thread() {
@@ -46,7 +51,17 @@ int Ft3x27Device::Thread() {
             zxlogf(ERROR,"ft3x27: Interrupt error %d\n",status);
             return status;
         }
-        zxlogf(INFO,"Touch interrupt\n");
+        //zxlogf(INFO,"Touch interrupt\n");
+        //uint8_t reports = Read(FTS_REG_CURPOINT);
+        Read(FTS_REG_FINGER_START,kMaxPoints * kFingerRptSize);
+        for(uint i = 0; i < kMaxPoints; i++) {
+            ft_finger_t ft;
+            ParseReport(&ft, &i2c_buf_[i * kFingerRptSize]);
+            if (ft.id != 15) {
+                zxlogf(INFO,"%02u:%02u  %2u  %4u  %4u\n", i, ft.id,
+                        ft.evt, ft.x, ft.y);
+            }
+        }
     }
     zxlogf(INFO,"Exiting ft3x27 thread\n");
 
@@ -89,7 +104,6 @@ zx_status_t Ft3x27Device::Create(zx_device_t* device) {
     zxlogf(INFO,"ft3x27: driver started...\n");
 
     auto ft_dev = fbl::make_unique<Ft3x27Device>(device);
-
     zx_status_t status = ft_dev->InitPdev();
     if (status != ZX_OK) {
         zxlogf(ERROR,"ft3x27: Driver bind failed %d\n",status);
@@ -99,6 +113,7 @@ zx_status_t Ft3x27Device::Create(zx_device_t* device) {
     for(uint8_t i=0; i<32; i++) {
         zxlogf(INFO,"REG 0x%02x = %02x\n",i,ft_dev->Read(i));
     }
+#if 1
 
     auto thunk = [](void* arg) -> int {
         return reinterpret_cast<Ft3x27Device*>(arg)->Thread();
@@ -115,7 +130,7 @@ zx_status_t Ft3x27Device::Create(zx_device_t* device) {
 //    ret = thrd_create_with_name(&ft_dev->test_thread_, thunk2,
 //                                    reinterpret_cast<void*>(ft_dev.get()),
 //                                    "ft3x27-thread");
-
+#endif
    // device intentionally leaked as it is now held by DevMgr
     __UNUSED auto ptr = ft_dev.release();
 
@@ -131,6 +146,10 @@ void Ft3x27Device::DdkRelease() {
 }
 
 void Ft3x27Device::DdkUnbind() {
+    running_.store(false);
+    irq_.destroy();
+    thrd_join(thread_,NULL);
+    proxy_.clear();
     DdkRemove();
 }
 
@@ -184,6 +203,14 @@ uint8_t Ft3x27Device::Read(uint8_t addr) {
     uint8_t rbuf;
     i2c_transact_sync(&i2c_,kI2cIndex,&addr,1,&rbuf,1);
     return rbuf;
+}
+
+uint8_t Ft3x27Device::Read(uint8_t addr, uint8_t len) {
+    if (len > sizeof(i2c_buf_)) {
+        return 0;
+    }
+    i2c_transact_sync(&i2c_, kI2cIndex, &addr, 1, i2c_buf_, len);
+    return len;
 }
 
 } //namespace ft

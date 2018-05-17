@@ -15,9 +15,18 @@
 #include <zircon/compiler.h>
 #include <zircon/types.h>
 
+typedef struct ft_finger {
+    uint8_t evt;
+    uint8_t id;
+    uint16_t x;
+    uint16_t y;
+} __PACKED ft_finger_t;
+
 #define FT_INT_PIN            0
 #define FT_RESET_PIN          1
 
+#define FTS_REG_CURPOINT                    0x02
+#define FTS_REG_FINGER_START                0x03
 #define FTS_REG_INT_CNT                     0x8F
 #define FTS_REG_FLOW_WORK_CNT               0x91
 #define FTS_REG_WORKMODE                    0x00
@@ -43,6 +52,7 @@
 #define FTS_REG_MODULE_ID                   0xE3
 #define FTS_REG_LIC_VER                     0xE4
 #define FTS_REG_ESD_SATURATE                0xED
+
 namespace ft {
 class Ft3x27Device : public ddk::Device<Ft3x27Device, ddk::Unbindable>,
                      public ddk::HidBusProtocol<Ft3x27Device> {
@@ -74,10 +84,19 @@ class Ft3x27Device : public ddk::Device<Ft3x27Device, ddk::Unbindable>,
     //Only one I2c channel is passed to this driver, so index should always
     // be zero.
     static constexpr uint32_t kI2cIndex = 0;
+    // Number of reports this device can report simultaneously
+    static constexpr uint32_t kMaxPoints = 5;
+    // Size of each individual report (on the i2c bus)
+    static constexpr uint32_t kFingerRptSize = 6; //Size of each Touch report
+
     zx_status_t InitPdev();
+    uint8_t i2c_buf_[kMaxPoints * sizeof(ft_finger_t)];
     uint8_t Read(uint8_t addr);
+    uint8_t Read(uint8_t addr, uint8_t len);
     int Thread();
     int TestThread();
+
+    void ParseReport(ft_finger_t* rpt, uint8_t* buf);
 
     gpio_protocol_t gpio_;
     zx::interrupt irq_;

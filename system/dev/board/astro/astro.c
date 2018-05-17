@@ -79,6 +79,7 @@ static int aml_start_thread(void* arg) {
         zxlogf(ERROR, "astro_touch_init failed: %d\n", status);
         goto fail;
     }
+
     return ZX_OK;
 fail:
     zxlogf(ERROR, "aml_start_thread failed, not all devices have been initialized\n");
