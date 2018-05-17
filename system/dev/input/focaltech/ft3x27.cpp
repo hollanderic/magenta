@@ -100,6 +100,7 @@ zx_status_t Ft3x27Device::InitPdev() {
 }
 
 zx_status_t Ft3x27Device::Create(zx_device_t* device) {
+    zx_nanosleep(zx_deadline_after(ZX_MSEC(100)));
 
     zxlogf(INFO,"ft3x27: driver started...\n");
 
