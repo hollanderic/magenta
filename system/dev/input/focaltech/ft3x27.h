@@ -11,16 +11,11 @@
 #include <ddktl/protocol/test.h>
 #include <fbl/mutex.h>
 #include <fbl/unique_ptr.h>
+#include <hid/ft3x27.h>
+
 #include <lib/zx/interrupt.h>
 #include <zircon/compiler.h>
 #include <zircon/types.h>
-
-typedef struct ft_finger {
-    uint8_t evt;
-    uint8_t id;
-    uint16_t x;
-    uint16_t y;
-} __PACKED ft_finger_t;
 
 #define FT_INT_PIN            0
 #define FT_RESET_PIN          1
@@ -90,13 +85,13 @@ class Ft3x27Device : public ddk::Device<Ft3x27Device, ddk::Unbindable>,
     static constexpr uint32_t kFingerRptSize = 6; //Size of each Touch report
 
     zx_status_t InitPdev();
-    uint8_t i2c_buf_[kMaxPoints * sizeof(ft_finger_t)];
+    uint8_t i2c_buf_[kMaxPoints * kFingerRptSize + 1];
     uint8_t Read(uint8_t addr);
     uint8_t Read(uint8_t addr, uint8_t len);
     int Thread();
     int TestThread();
 
-    void ParseReport(ft_finger_t* rpt, uint8_t* buf);
+    void ParseReport(ft3x27_finger_t* rpt, uint8_t* buf);
 
     gpio_protocol_t gpio_;
     zx::interrupt irq_;

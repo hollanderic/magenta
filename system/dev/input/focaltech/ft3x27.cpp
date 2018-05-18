@@ -20,16 +20,23 @@
 
 namespace ft {
 
+
+void dump(uint64_t* buf) {
+    zxlogf(INFO,"%016lx%016lx\n",buf[0],buf[1]);
+}
+
 Ft3x27Device::Ft3x27Device(zx_device_t* device)
     : ddk::Device<Ft3x27Device, ddk::Unbindable>(device) {
 }
-void Ft3x27Device::ParseReport(ft_finger_t* rpt, uint8_t* buf) {
-    rpt->evt = static_cast<uint8_t>(buf[0] >> 6);
+
+void Ft3x27Device::ParseReport(ft3x27_finger_t* rpt, uint8_t* buf) {
+    //rpt->evt = static_cast<uint8_t>(buf[0] >> 6);
     rpt->x = static_cast<uint16_t>(((buf[0] & 0x0f) << 8) + buf[1]);
     rpt->y = static_cast<uint16_t>(((buf[2] & 0x0f) << 8) + buf[3]);
-    rpt->id = static_cast<uint8_t>(buf[2] >> 4);
+    rpt->finger_id = static_cast<uint8_t>(
+             ((buf[2] >> 2) & FT3X27_FINGER_ID_CONTACT_MASK) |
+             (((buf[0] & 0xC0) == 0x80) ? 1 : 0));
 }
-
 
 int Ft3x27Device::TestThread() {
     while (true) {
@@ -51,20 +58,27 @@ int Ft3x27Device::Thread() {
             zxlogf(ERROR,"ft3x27: Interrupt error %d\n",status);
             return status;
         }
-        //zxlogf(INFO,"Touch interrupt\n");
-        //uint8_t reports = Read(FTS_REG_CURPOINT);
-        Read(FTS_REG_FINGER_START,kMaxPoints * kFingerRptSize);
+        ft3x27_touch_t ft;
+        Read(FTS_REG_CURPOINT,kMaxPoints * kFingerRptSize + 1);
+
+        //dump(reinterpret_cast<uint64_t*>(i2c_buf_));
+        ft.rpt_id = FT3X27_RPT_ID_TOUCH;
+        ft.contact_count = i2c_buf_[0];
         for(uint i = 0; i < kMaxPoints; i++) {
-            ft_finger_t ft;
-            ParseReport(&ft, &i2c_buf_[i * kFingerRptSize]);
-            if (ft.id != 15) {
-                zxlogf(INFO,"%02u:%02u  %2u  %4u  %4u\n", i, ft.id,
-                        ft.evt, ft.x, ft.y);
+            ParseReport(&ft.fingers[i], &i2c_buf_[i * kFingerRptSize + 1]);
+            /*if (ft3x27_finger_id_tswitch(ft.fingers[i].finger_id)) {
+                zxlogf(INFO,"%02u:%02x  %4u  %4u\n", i,
+                        ft.fingers[i].finger_id,
+                        ft.fingers[i].x, ft.fingers[i].y);
             }
+            */
+
+        }
+        if (proxy_.is_valid()) {
+            proxy_.IoQueue(reinterpret_cast<uint8_t*>(&ft),sizeof(ft3x27_touch_t));
         }
     }
     zxlogf(INFO,"Exiting ft3x27 thread\n");
-
 }
 
 zx_status_t Ft3x27Device::InitPdev() {
@@ -87,7 +101,6 @@ zx_status_t Ft3x27Device::InitPdev() {
     }
 
     gpio_config(&gpio_, FT_INT_PIN, GPIO_DIR_IN);
-    //gpio_write(&gpio_, PHY_RESET, 0);
 
     status = gpio_get_interrupt(&gpio_, FT_INT_PIN,
                        ZX_INTERRUPT_MODE_EDGE_LOW,
@@ -132,6 +145,16 @@ zx_status_t Ft3x27Device::Create(zx_device_t* device) {
 //                                    reinterpret_cast<void*>(ft_dev.get()),
 //                                    "ft3x27-thread");
 #endif
+
+
+    status = ft_dev->DdkAdd("ft3x27 HidDevice\n");
+    if (status != ZX_OK) {
+        zxlogf(ERROR, "ft3x27: Could not create hid device: %d\n", status);
+        return status;
+    } else {
+        zxlogf(INFO, "ft3x27: Added hid device\n");
+    }
+
    // device intentionally leaked as it is now held by DevMgr
     __UNUSED auto ptr = ft_dev.release();
 
@@ -139,6 +162,13 @@ zx_status_t Ft3x27Device::Create(zx_device_t* device) {
 }
 
 zx_status_t Ft3x27Device::HidBusQuery(uint32_t options, hid_info_t* info){
+    if (!info) {
+        return ZX_ERR_INVALID_ARGS;
+    }
+    info->dev_num = 0;
+    info->dev_class = HID_DEV_CLASS_OTHER;
+    info->boot_device = false;
+
     return ZX_OK;
 }
 
@@ -156,27 +186,40 @@ void Ft3x27Device::DdkUnbind() {
 
 
 zx_status_t Ft3x27Device::HidBusGetDescriptor(uint8_t desc_type, void** data, size_t* len) {
+
+    const uint8_t* desc_ptr;
+    uint8_t* buf;
+    *len = get_ft3x27_report_desc(&desc_ptr);
+    fbl::AllocChecker ac;
+    buf = new (&ac) uint8_t[*len];
+    if (!ac.check()) {
+        return ZX_ERR_NO_MEMORY;
+    }
+    memcpy(buf, desc_ptr, *len);
+    *data = buf;
+    zxlogf(INFO,"ft3x27: returned report descriptor of %lu bytes\n",*len);
     return ZX_OK;
 }
+
 zx_status_t Ft3x27Device::HidBusGetReport(uint8_t rpt_type, uint8_t rpt_id, void* data,
                                           size_t len, size_t* out_len){
-    return ZX_OK;
+    return ZX_ERR_NOT_SUPPORTED;
 }
 
 zx_status_t Ft3x27Device::HidBusSetReport(uint8_t rpt_type, uint8_t rpt_id, void* data,
                                           size_t len){
-    return ZX_OK;
+    return ZX_ERR_NOT_SUPPORTED;
 }
 zx_status_t Ft3x27Device::HidBusGetIdle(uint8_t rpt_id, uint8_t* duration) {
-    return ZX_OK;
+    return ZX_ERR_NOT_SUPPORTED;
 }
 zx_status_t Ft3x27Device::HidBusSetIdle(uint8_t rpt_id, uint8_t duration) {
-    return ZX_OK;
+    return ZX_ERR_NOT_SUPPORTED;
 }
 
 
 zx_status_t Ft3x27Device::HidBusGetProtocol(uint8_t* protocol) {
-    return ZX_OK;
+    return ZX_ERR_NOT_SUPPORTED;
 }
 zx_status_t Ft3x27Device::HidBusSetProtocol(uint8_t protocol) {
     return ZX_OK;
@@ -210,7 +253,10 @@ uint8_t Ft3x27Device::Read(uint8_t addr, uint8_t len) {
     if (len > sizeof(i2c_buf_)) {
         return 0;
     }
-    i2c_transact_sync(&i2c_, kI2cIndex, &addr, 1, i2c_buf_, len);
+    zx_status_t status = i2c_transact_sync(&i2c_, kI2cIndex, &addr, 1, i2c_buf_, len);
+    if (status != ZX_OK) {
+        zxlogf(ERROR,"Failed to read i2c - %d\n",status);
+    }
     return len;
 }
 
