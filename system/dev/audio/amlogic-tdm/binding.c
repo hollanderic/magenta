@@ -11,31 +11,12 @@
 
 #include <soc/aml-common/aml-tdm.h>
 
-
-
-zx_status_t aml_tdm_bind(void* ctx, zx_device_t* parent) {
-    zxlogf(INFO,"Made it to %s\n",__func__);
-
-    size_t actual;
-    uint8_t buffer[128];
-    zx_status_t status = device_get_metadata(parent, AML_TDM_METADATA, buffer,
-                                             sizeof(buffer), &actual);
-    zxlogf(INFO,"amltdm got back status=%d  bytes=%lu\n",status,actual);
-    if (status == ZX_OK) {
-        zxlogf(INFO,"String = %s\n",buffer);
-    }
-
-    return ZX_OK;
-}
-
-
-
-//extern void gauss_tdm_release(void*);
+extern zx_status_t audio_bind(void* ctx, zx_device_t* parent);
 
 static zx_driver_ops_t aml_tdm_driver_ops = {
     .version = DRIVER_OPS_VERSION,
-    .bind = aml_tdm_bind,
-    //.release = gauss_tdm_release,
+    .bind = audio_bind,
+    //.release = ,
 };
 
 // clang-format off

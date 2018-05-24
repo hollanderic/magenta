@@ -10,6 +10,8 @@ MODULE_TYPE := driver
 
 MODULE_SRCS += \
     $(LOCAL_DIR)/binding.c \
+    $(LOCAL_DIR)/audio.cpp \
+    $(LOCAL_DIR)/aml-tdm.cpp \
 
 
 MODULE_LIBS := \

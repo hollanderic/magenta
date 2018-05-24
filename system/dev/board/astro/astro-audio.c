@@ -17,7 +17,6 @@
 
 #include "astro.h"
 
-
 static char teststr[] = "Eric Holland\0";
 
 static pbus_boot_metadata_t meta[] = {
@@ -29,26 +28,10 @@ static pbus_boot_metadata_t meta[] = {
     },
 };
 
-#if 0
-static const pbus_i2c_channel_t tdm_i2cs[] = {
+static const pbus_mmio_t tdm_audio_mmios[] = {
     {
-        .bus_id = AML_I2C_B,
-        .address = 0x4C
-    },
-    {
-        .bus_id = AML_I2C_B,
-        .address = 0x4D
-    },
-    {
-        .bus_id = AML_I2C_B,
-        .address = 0x4E
-    },
-};
-
-static const pbus_irq_t tdm_irqs[] = {
-    {
-        .irq = (90 + 32),
-        .mode = ZX_INTERRUPT_MODE_EDGE_HIGH,
+        .base = S905D2_EE_AUDIO_BASE,
+        .length = S905D2_EE_AUDIO_LENGTH
     },
 };
 
@@ -59,29 +42,16 @@ static const pbus_bti_t tdm_btis[] = {
     },
 };
 
-static const pbus_dev_t gauss_tdm_audio_dev = {
-    .name = "gauss-tdm-audio",
-    .vid = PDEV_VID_GOOGLE,
-    .pid = PDEV_PID_GAUSS,
-    .did = PDEV_DID_GAUSS_AUDIO_OUT,
-    .irqs = tdm_irqs,
-    .irq_count = countof(tdm_irqs),
-    .mmios = tdm_audio_mmios,
-    .mmio_count = countof(tdm_audio_mmios),
-    .i2c_channels = tdm_i2cs,
-    .i2c_channel_count = countof(tdm_i2cs),
-    .btis = tdm_btis,
-    .bti_count = countof(tdm_btis),
-};
-
-
-#endif
 
 static pbus_dev_t aml_tdm_dev = {
     .name = teststr,
     .vid = PDEV_VID_AMLOGIC,
     .pid = PDEV_PID_AMLOGIC_S905D2,
     .did = PDEV_DID_AMLOGIC_TDM,
+    .mmios = tdm_audio_mmios,
+    .mmio_count = countof(tdm_audio_mmios),
+    .btis = tdm_btis,
+    .bti_count = countof(tdm_btis),
     .boot_metadata = meta,
     .boot_metadata_count = countof(meta)
 };
