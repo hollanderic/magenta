@@ -26,6 +26,8 @@ zx_status_t AmlAudioStream::Create(zx_device_t* parent) {
         zxlogf(ERROR,"%s failed to create tdm device\n",__func__);
         return ZX_ERR_NO_MEMORY;
     }
+
+
     zxlogf(INFO,"%s created successfully\n",__func__);
 
     __UNUSED auto dummy = stream.leak_ref();

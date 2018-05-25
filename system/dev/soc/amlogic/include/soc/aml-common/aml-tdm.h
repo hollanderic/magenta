@@ -27,7 +27,6 @@ typedef struct {
 
 // Hardware register overlays
 
-
 typedef struct {
     uint32_t ctl0;
     uint32_t ctl1;
