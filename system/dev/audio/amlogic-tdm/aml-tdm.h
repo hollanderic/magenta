@@ -20,6 +20,24 @@
 #include <soc/aml-common/aml-tdm.h>
 
 
+template <typename T, typename U>
+class MmioBlock {
+public:
+    MmioBlock(U* ptr, zx_off_t offs) {
+        ptr_ = (reinterpret_cast<uintptr_t>(ptr) + offs);
+    }
+    T Read(zx_off_t offs) {
+        return *reinterpret_cast<T*>(ptr_ + offs);
+    }
+    void Write(T val, zx_off_t offs) {
+        *reinterpret_cast<T*>(ptr_ + offs) = val;
+        DSB();
+        ISB();
+    }
+private:
+    T* ptr_;
+};
+
 
 class AmlTdmDevice : public fbl::unique_ptr<AmlTdmDevice> {
 
@@ -33,6 +51,8 @@ private:
     friend class fbl::unique_ptr<AmlTdmDevice>;
 
     AmlTdmDevice() { }
+
+    MmioPtr<uint32_t> uregs_
 
     virtual ~AmlTdmDevice();
 
