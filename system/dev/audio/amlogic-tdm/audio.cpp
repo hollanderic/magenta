@@ -1,6 +1,6 @@
 
 #include <ddk/debug.h>
-
+#include <ddktl/pdev.h>
 
 #include "audio.h"
 
@@ -11,11 +11,14 @@ zx_status_t AmlAudioStream::Create(zx_device_t* parent) {
 
     fbl::AllocChecker ac;
 
-    auto stream = fbl::AdoptRef(new (&ac) AmlAudioStream(parent));
+    __UNUSED auto stream = fbl::AdoptRef(new (&ac) AmlAudioStream(parent));
     if (!ac.check()) {
         return ZX_ERR_NO_MEMORY;
     }
 
+    __UNUSED fbl::RefPtr<ddk::Pdev> temp = ddk::Pdev::Create(parent);
+
+#if 0
     zx_status_t res = device_get_protocol(parent, ZX_PROTOCOL_PLATFORM_DEV, &stream->pdev_);
     if (res != ZX_OK) {
         return res;
@@ -31,7 +34,7 @@ zx_status_t AmlAudioStream::Create(zx_device_t* parent) {
     zxlogf(INFO,"%s created successfully\n",__func__);
 
     __UNUSED auto dummy = stream.leak_ref();
-
+#endif
     return ZX_OK;
 }
 
