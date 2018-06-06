@@ -16,7 +16,21 @@ zx_status_t AmlAudioStream::Create(zx_device_t* parent) {
         return ZX_ERR_NO_MEMORY;
     }
 
-    __UNUSED fbl::RefPtr<ddk::Pdev> temp = ddk::Pdev::Create(parent);
+    __UNUSED fbl::RefPtr<ddk::Pdev> pdev = ddk::Pdev::Create(parent);
+
+
+    ddk::MmioBlock mmio;
+    mmio = pdev->GetMmio(0);
+
+
+    if (mmio.isValid()) {
+        zxlogf(INFO,"mmio @%p\n",mmio.GetRaw());
+    } else {
+        zxlogf(INFO,"mmio mapping failed\n");
+    }
+
+    for (uint i=0 ;i<100; i=i+4)
+        zxlogf(INFO,"[%2u] = %08x\n",i,mmio.Read(i));
 
 #if 0
     zx_status_t res = device_get_protocol(parent, ZX_PROTOCOL_PLATFORM_DEV, &stream->pdev_);

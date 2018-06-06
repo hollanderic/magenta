@@ -2,6 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 #include <ddk/debug.h>
+#include <ddktl/mmio.h>
+
 #include <ddktl/pdev.h>
 #include <fbl/alloc_checker.h>
 
@@ -20,6 +22,22 @@ void Pdev::ShowInfo() {
     zxlogf(INFO, "bti count           = %d\n", pdev_info_.bti_count);
     zxlogf(INFO, "boot metadata count = %d\n", pdev_info_.boot_metadata_count);
 }
+
+MmioBlock Pdev::GetMmio(uint32_t index) {
+
+    void* ptr;
+    size_t len;
+    zx::vmo vmo;
+
+    zx_status_t res = pdev_map_mmio(&pdev_, index,
+        ZX_CACHE_POLICY_UNCACHED_DEVICE, &ptr,
+        &len, vmo.reset_and_get_address());
+    if (res != ZX_OK) {
+        return MmioBlock(MmioBlock(nullptr, 0, 0));
+    }
+    return MmioBlock(MmioBlock(ptr, 0, len));
+}
+
 
 fbl::RefPtr<Pdev> Pdev::Create(zx_device_t* parent) {
 

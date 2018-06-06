@@ -13,77 +13,60 @@
 
 namespace ddk {
 
-template <typename T>
 class MmioBlock {
+
 public:
-    static fbl::unique_ptr<MmioBlock<T>> Create(platform_device_protocol_t* pdev,
-                                                uint32_t mmio_idx) {
+    friend class Pdev;
 
-        auto mmio = Create(nullptr, 0, 0);
-        if (!mmio) {
-            return nullptr;
-        }
-
-        zx_status_t res = pdev_map_mmio(pdev, mmio_idx,
-            ZX_CACHE_POLICY_UNCACHED_DEVICE, reinterpret_cast<void**>(&mmio->ptr_),
-            &mmio->len_, mmio->vmo_.reset_and_get_address());
-        if (res != ZX_OK) {
-            return nullptr;
-        }
-
-        return mmio;
-    }
-
-    static fbl::unique_ptr<MmioBlock<T>> Create(void* ptr, zx_off_t offs, size_t len) {
-        fbl::AllocChecker ac;
-        auto mmio = fbl::unique_ptr<MmioBlock<T>>(
-            new (&ac) MmioBlock<T>(ptr, offs, len));
-        if (!ac.check()) {
-            return nullptr;
-        }
-        return mmio;
-    }
-
-    T Read(zx_off_t offs) {
-        assert(offs < len_);
+    uint32_t Read(zx_off_t offs) {
+        assert(offs + sizeof(uint32_t) < len_);
         assert(ptr_);
-        return *reinterpret_cast<T*>(ptr_ + offs);
+        return *reinterpret_cast<uint32_t*>(ptr_ + offs);
     }
 
-    T ReadMasked(T mask, zx_off_t offs) {
+    uint32_t ReadMasked(uint32_t mask, zx_off_t offs) {
         return (Read(offs) & mask);
     }
 
-    void Write(T val, zx_off_t offs) {
-        assert(offs < len_);
+    void Write(uint32_t val, zx_off_t offs) {
+        assert(offs + sizeof(uint32_t) < len_);
         assert(ptr_);
-        *reinterpret_cast<T*>(ptr_ + offs) = val;
+        *reinterpret_cast<uint32_t*>(ptr_ + offs) = val;
         hw_mb();
     }
 
-    void SetBits(T mask, zx_off_t offs) {
-        T val = Read(offs);
+    void SetBits(uint32_t mask, zx_off_t offs) {
+        uint32_t val = Read(offs);
         Write(val | mask, offs);
     }
 
-    void ClearBits(T mask, zx_off_t offs) {
-        T val = Read(offs);
+    void ClearBits(uint32_t mask, zx_off_t offs) {
+        uint32_t val = Read(offs);
         Write(val & ~mask, offs);
     }
 
     bool isValid() {
         return ((ptr_ != 0) && (len_ != 0));
     }
-
-private:
-    MmioBlock(void* ptr, zx_off_t offs, size_t len) {
-        ptr_ = (reinterpret_cast<uintptr_t>(ptr) + offs);
-        len_ = len;
+    void* GetRaw() {
+        return reinterpret_cast<void*>(ptr_);
     }
 
-    uintptr_t ptr_ = 0;
-    size_t len_ = 0;
-    zx::vmo vmo_;       //Hold a ref if we were created by pdev
+    MmioBlock& operator=(MmioBlock&& other) = default;
+    MmioBlock() : MmioBlock(nullptr, 0, 0) {}
+    DISALLOW_COPY_AND_ASSIGN_ALLOW_MOVE(MmioBlock);
+
+private:
+    uintptr_t ptr_;
+    size_t len_;
+
+    MmioBlock(MmioBlock&&) = default;
+
+    MmioBlock(void* ptr, zx_off_t offs, size_t len) :
+            ptr_(reinterpret_cast<uintptr_t>(ptr) + offs),
+            len_(len) {}
+
+    zx::vmo vmo_;
 };
 
 } //namespace ddk

@@ -17,13 +17,13 @@ fbl::unique_ptr<AmlTdmDevice> AmlTdmDevice::Create(platform_device_protocol_t* p
                                   uint32_t mmio_idx) {
 
     auto tdm_dev = fbl::unique_ptr<AmlTdmDevice>(new AmlTdmDevice());
-
+#if 0
     tdm_dev->uregs_ = ddk::MmioBlock<uint32_t>::Create(pdev, mmio_idx);
     if (!tdm_dev->uregs_) {
         zxlogf(ERROR,"AmlTdm: Failed to map mmio\n");
         return nullptr;
     }
-
+#endif
     tdm_dev->InitRegs();
 
     return tdm_dev;
@@ -32,7 +32,7 @@ fbl::unique_ptr<AmlTdmDevice> AmlTdmDevice::Create(platform_device_protocol_t* p
 
 void AmlTdmDevice::InitRegs() {
 
-    uregs_->SetBits(0x00002000, AML_TDM_CLK_GATE_EN);
+    //uregs_->SetBits(0x00002000, AML_TDM_CLK_GATE_EN);
 
 
 }

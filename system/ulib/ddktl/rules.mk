@@ -15,7 +15,6 @@ MODULE_SRCS := \
 
 MODULE_STATIC_LIBS := \
     system/ulib/ddk \
-    system/ulib/ddktl \
     system/ulib/zx \
     system/ulib/zxcpp \
     system/ulib/fbl \

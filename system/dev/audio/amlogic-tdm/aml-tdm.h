@@ -35,7 +35,7 @@ private:
     AmlTdmDevice() { };
     void InitRegs();
 
-    fbl::unique_ptr<ddk::MmioBlock<uint32_t>> uregs_;
+    //fbl::unique_ptr<ddk::MmioBlock<uint32_t>> uregs_;
 
     virtual ~AmlTdmDevice();
 
