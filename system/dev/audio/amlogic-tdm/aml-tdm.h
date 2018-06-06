@@ -24,7 +24,7 @@
 class AmlTdmDevice : public fbl::unique_ptr<AmlTdmDevice> {
 
 public:
-    static fbl::unique_ptr<AmlTdmDevice> Create(platform_device_protocol_t* pdev, uint32_t mmio_idx);
+    static fbl::unique_ptr<AmlTdmDevice> Create(ddk::MmioBlock&& mmio);
 
 
 private:
@@ -35,6 +35,7 @@ private:
     AmlTdmDevice() { };
     void InitRegs();
 
+    ddk::MmioBlock mmio_;
     //fbl::unique_ptr<ddk::MmioBlock<uint32_t>> uregs_;
 
     virtual ~AmlTdmDevice();

@@ -18,37 +18,30 @@ zx_status_t AmlAudioStream::Create(zx_device_t* parent) {
 
     __UNUSED fbl::RefPtr<ddk::Pdev> pdev = ddk::Pdev::Create(parent);
 
-
+#if 1
+    zxlogf(INFO,"Getting MMIO\n");
     ddk::MmioBlock mmio;
     mmio = pdev->GetMmio(0);
+    zxlogf(INFO,"Got MMIO\n");
 
-
-    if (mmio.isValid()) {
-        zxlogf(INFO,"mmio @%p\n",mmio.GetRaw());
-    } else {
-        zxlogf(INFO,"mmio mapping failed\n");
+    if (!mmio.isValid()) {
+        zxlogf(ERROR,"AmlAudio: Failed to allocate mmio\n");
+        return ZX_ERR_NO_RESOURCES;
     }
+#endif
+    zxlogf(INFO,"Creating AmlTdmDevice\n");
 
-    for (uint i=0 ;i<100; i=i+4)
-        zxlogf(INFO,"[%2u] = %08x\n",i,mmio.Read(i));
+    stream->tdm_ = AmlTdmDevice::Create(mmio.release());
+    zxlogf(INFO,"Created AmlTdmDevice\n");
 
-#if 0
-    zx_status_t res = device_get_protocol(parent, ZX_PROTOCOL_PLATFORM_DEV, &stream->pdev_);
-    if (res != ZX_OK) {
-        return res;
-    }
-
-    stream->tdm_ = AmlTdmDevice::Create(&stream->pdev_, 0);
     if (stream->tdm_ == nullptr) {
         zxlogf(ERROR,"%s failed to create tdm device\n",__func__);
         return ZX_ERR_NO_MEMORY;
     }
 
-
     zxlogf(INFO,"%s created successfully\n",__func__);
 
     __UNUSED auto dummy = stream.leak_ref();
-#endif
     return ZX_OK;
 }
 

@@ -13,10 +13,16 @@
 
 #include "aml-tdm.h"
 
-fbl::unique_ptr<AmlTdmDevice> AmlTdmDevice::Create(platform_device_protocol_t* pdev,
-                                  uint32_t mmio_idx) {
+fbl::unique_ptr<AmlTdmDevice> AmlTdmDevice::Create(ddk::MmioBlock&& mmio) {
 
     auto tdm_dev = fbl::unique_ptr<AmlTdmDevice>(new AmlTdmDevice());
+    zxlogf(INFO,"before\n");
+    mmio.Info();
+    tdm_dev->mmio_ = mmio.release();
+    zxlogf(INFO,"after\n");
+    mmio.Info();
+    tdm_dev->mmio_.Info();
+
 #if 0
     tdm_dev->uregs_ = ddk::MmioBlock<uint32_t>::Create(pdev, mmio_idx);
     if (!tdm_dev->uregs_) {

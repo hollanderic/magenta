@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 #include <ddk/debug.h>
-#include <ddktl/mmio.h>
+//#include <ddktl/mmio.h>
 
 #include <ddktl/pdev.h>
 #include <fbl/alloc_checker.h>
@@ -35,7 +35,7 @@ MmioBlock Pdev::GetMmio(uint32_t index) {
     if (res != ZX_OK) {
         return MmioBlock(MmioBlock(nullptr, 0, 0));
     }
-    return MmioBlock(MmioBlock(ptr, 0, len));
+    return MmioBlock(ptr, 0, len, vmo.release());
 }
 
 

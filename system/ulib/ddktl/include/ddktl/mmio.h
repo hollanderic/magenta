@@ -6,8 +6,7 @@
 
 #include <assert.h>
 #include <ddk/protocol/platform-device.h>
-#include <fbl/alloc_checker.h>
-#include <fbl/unique_ptr.h>
+#include <fbl/macros.h>
 #include <hw/arch_ops.h>
 #include <lib/zx/vmo.h>
 
@@ -18,31 +17,60 @@ class MmioBlock {
 public:
     friend class Pdev;
 
-    uint32_t Read(zx_off_t offs) {
-        assert(offs + sizeof(uint32_t) < len_);
-        assert(ptr_);
-        return *reinterpret_cast<uint32_t*>(ptr_ + offs);
+    DISALLOW_COPY_AND_ASSIGN_ALLOW_MOVE(MmioBlock);
+    DISALLOW_NEW;
+
+    MmioBlock() : MmioBlock(nullptr, 0, 0) {}
+
+    MmioBlock& operator=(MmioBlock&& other) {
+                len_ = other.len_;
+            ptr_ = other.ptr_;
+            vmo_.reset(other.vmo_.release());
+            other.len_ = 0;
+            other.ptr_ = 0;
+        return *this;
     }
 
-    uint32_t ReadMasked(uint32_t mask, zx_off_t offs) {
-        return (Read(offs) & mask);
+    MmioBlock release() {
+        return MmioBlock(*this);
     }
 
-    void Write(uint32_t val, zx_off_t offs) {
-        assert(offs + sizeof(uint32_t) < len_);
+    void Info() {
+        printf("ptr = %lx\n", ptr_);
+        printf("len = %lu\n", len_);
+        printf("vmo = %x\n", vmo_.get());
+    }
+
+    template<typename T = uint32_t>
+    T Read(zx_off_t offs) {
+        assert(offs + sizeof(T) < len_);
         assert(ptr_);
-        *reinterpret_cast<uint32_t*>(ptr_ + offs) = val;
+        return *reinterpret_cast<T*>(ptr_ + offs);
+    }
+
+    template<typename T = uint32_t>
+    T ReadMasked(T mask, zx_off_t offs) {
+        return (Read<T>(offs) & mask);
+    }
+
+    template<typename T = uint32_t>
+    void Write(T val, zx_off_t offs) {
+        assert(offs + sizeof(T) < len_);
+        assert(ptr_);
+        *reinterpret_cast<T*>(ptr_ + offs) = val;
         hw_mb();
     }
 
-    void SetBits(uint32_t mask, zx_off_t offs) {
-        uint32_t val = Read(offs);
-        Write(val | mask, offs);
+    template<typename T = uint32_t>
+    void SetBits(T mask, zx_off_t offs) {
+        T val = Read<T>(offs);
+        Write<T>(val | mask, offs);
     }
 
-    void ClearBits(uint32_t mask, zx_off_t offs) {
-        uint32_t val = Read(offs);
-        Write(val & ~mask, offs);
+    template<typename T = uint32_t>
+    void ClearBits(T mask, zx_off_t offs) {
+        T val = Read<T>(offs);
+        Write<T>(val & ~mask, offs);
     }
 
     bool isValid() {
@@ -52,20 +80,44 @@ public:
         return reinterpret_cast<void*>(ptr_);
     }
 
-    MmioBlock& operator=(MmioBlock&& other) = default;
-    MmioBlock() : MmioBlock(nullptr, 0, 0) {}
-    DISALLOW_COPY_AND_ASSIGN_ALLOW_MOVE(MmioBlock);
+    ~MmioBlock() {
+        printf("------------\n");
+
+        Info();
+        printf("kill, mame, destroy\n");
+        if (isValid()) {
+            printf("   and also unmap @%lx\n",ptr_);
+            zx_vmar_unmap(zx_vmar_root_self(), ptr_, len_);
+        }
+        printf("------------\n");
+
+    }
+    MmioBlock(MmioBlock&&) = default;
+
 
 private:
-    uintptr_t ptr_;
-    size_t len_;
 
-    MmioBlock(MmioBlock&&) = default;
+
+    MmioBlock(MmioBlock& other)
+    {
+            len_ = other.len_;
+            ptr_ = other.ptr_;
+            vmo_.reset(other.vmo_.release());
+            other.len_ = 0;
+            other.ptr_ = 0;
+    }
 
     MmioBlock(void* ptr, zx_off_t offs, size_t len) :
             ptr_(reinterpret_cast<uintptr_t>(ptr) + offs),
             len_(len) {}
 
+    MmioBlock(void* ptr, zx_off_t offs, size_t len, zx_handle_t vmo) :
+            ptr_(reinterpret_cast<uintptr_t>(ptr) + offs),
+            len_(len),
+            vmo_(vmo) {}
+
+    uintptr_t ptr_;
+    size_t len_;
     zx::vmo vmo_;
 };
 
