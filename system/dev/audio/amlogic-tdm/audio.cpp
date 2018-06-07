@@ -16,23 +16,17 @@ zx_status_t AmlAudioStream::Create(zx_device_t* parent) {
         return ZX_ERR_NO_MEMORY;
     }
 
-    __UNUSED fbl::RefPtr<ddk::Pdev> pdev = ddk::Pdev::Create(parent);
+    fbl::RefPtr<ddk::Pdev> pdev = ddk::Pdev::Create(parent);
 
-#if 1
-    zxlogf(INFO,"Getting MMIO\n");
     ddk::MmioBlock mmio;
     mmio = pdev->GetMmio(0);
-    zxlogf(INFO,"Got MMIO\n");
 
-    if (!mmio.isValid()) {
+    if (!mmio.isMapped()) {
         zxlogf(ERROR,"AmlAudio: Failed to allocate mmio\n");
         return ZX_ERR_NO_RESOURCES;
     }
-#endif
-    zxlogf(INFO,"Creating AmlTdmDevice\n");
 
     stream->tdm_ = AmlTdmDevice::Create(mmio.release());
-    zxlogf(INFO,"Created AmlTdmDevice\n");
 
     if (stream->tdm_ == nullptr) {
         zxlogf(ERROR,"%s failed to create tdm device\n",__func__);

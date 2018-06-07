@@ -6,6 +6,8 @@
 
 #include <ddktl/pdev.h>
 #include <fbl/alloc_checker.h>
+#include <zircon/assert.h>
+#include <lib/zx/interrupt.h>
 
 namespace ddk {
 
@@ -35,7 +37,7 @@ MmioBlock Pdev::GetMmio(uint32_t index) {
     if (res != ZX_OK) {
         return MmioBlock(MmioBlock(nullptr, 0, 0));
     }
-    return MmioBlock(ptr, 0, len, vmo.release());
+    return MmioBlock(ptr, len, vmo.release());
 }
 
 

@@ -4,12 +4,14 @@
 
 #pragma once
 
-#include <assert.h>
-#include <ddk/protocol/platform-device.h>
+#include <zircon/assert.h>
 #include <fbl/macros.h>
 #include <hw/arch_ops.h>
 #include <lib/zx/vmo.h>
-
+/*
+    MmioBlock is used to hold a reference to a block of memory mapped I/O, intended
+    to be used in platform device drivers.
+*/
 namespace ddk {
 
 class MmioBlock {
@@ -20,15 +22,16 @@ public:
     DISALLOW_COPY_AND_ASSIGN_ALLOW_MOVE(MmioBlock);
     DISALLOW_NEW;
 
-    MmioBlock() : MmioBlock(nullptr, 0, 0) {}
+    MmioBlock() : MmioBlock(nullptr, 0) {}
 
+    // Allow assignment from an rvalue
     MmioBlock& operator=(MmioBlock&& other) {
-                len_ = other.len_;
-            ptr_ = other.ptr_;
-            vmo_.reset(other.vmo_.release());
-            other.len_ = 0;
-            other.ptr_ = 0;
+        transfer(other);
         return *this;
+    }
+
+    void reset(MmioBlock&& other) {
+        transfer(other);
     }
 
     MmioBlock release() {
@@ -43,8 +46,8 @@ public:
 
     template<typename T = uint32_t>
     T Read(zx_off_t offs) {
-        assert(offs + sizeof(T) < len_);
-        assert(ptr_);
+        ZX_DEBUG_ASSERT(offs + sizeof(T) < len_);
+        ZX_DEBUG_ASSERT(ptr_);
         return *reinterpret_cast<T*>(ptr_ + offs);
     }
 
@@ -55,8 +58,8 @@ public:
 
     template<typename T = uint32_t>
     void Write(T val, zx_off_t offs) {
-        assert(offs + sizeof(T) < len_);
-        assert(ptr_);
+        ZX_DEBUG_ASSERT(offs + sizeof(T) < len_);
+        ZX_DEBUG_ASSERT(ptr_);
         *reinterpret_cast<T*>(ptr_ + offs) = val;
         hw_mb();
     }
@@ -73,33 +76,24 @@ public:
         Write<T>(val & ~mask, offs);
     }
 
-    bool isValid() {
+    bool isMapped() {
         return ((ptr_ != 0) && (len_ != 0));
     }
-    void* GetRaw() {
+    void* get() {
         return reinterpret_cast<void*>(ptr_);
     }
 
     ~MmioBlock() {
-        printf("------------\n");
-
-        Info();
-        printf("kill, mame, destroy\n");
-        if (isValid()) {
-            printf("   and also unmap @%lx\n",ptr_);
+        // If we have a valid pointer and length, unmap on the way out
+        if (isMapped()) {
             zx_vmar_unmap(zx_vmar_root_self(), ptr_, len_);
         }
-        printf("------------\n");
-
     }
+
     MmioBlock(MmioBlock&&) = default;
 
-
 private:
-
-
-    MmioBlock(MmioBlock& other)
-    {
+    void transfer(MmioBlock& other) {
             len_ = other.len_;
             ptr_ = other.ptr_;
             vmo_.reset(other.vmo_.release());
@@ -107,12 +101,16 @@ private:
             other.ptr_ = 0;
     }
 
-    MmioBlock(void* ptr, zx_off_t offs, size_t len) :
-            ptr_(reinterpret_cast<uintptr_t>(ptr) + offs),
+    MmioBlock(MmioBlock& other) {
+        transfer(other);
+    }
+
+    MmioBlock(void* ptr, size_t len) :
+            ptr_(reinterpret_cast<uintptr_t>(ptr)),
             len_(len) {}
 
-    MmioBlock(void* ptr, zx_off_t offs, size_t len, zx_handle_t vmo) :
-            ptr_(reinterpret_cast<uintptr_t>(ptr) + offs),
+    MmioBlock(void* ptr, size_t len, zx_handle_t vmo) :
+            ptr_(reinterpret_cast<uintptr_t>(ptr)),
             len_(len),
             vmo_(vmo) {}
 

@@ -10,6 +10,9 @@
 #include <fbl/ref_counted.h>
 #include <fbl/ref_ptr.h>
 #include <fbl/vector.h>
+#include <lib/zx/interrupt.h>
+#include <lib/zx/bti.h>
+
 
 
 namespace ddk {
@@ -23,8 +26,21 @@ public:
 
     MmioBlock GetMmio(uint32_t index);
 
+    zx_status_t MapInterrupt(uint32_t index, uint32_t flags, zx::interrupt* out) {
+        return pdev_get_interrupt(&pdev_, index, flags,
+            out->reset_and_get_address());
+    }
+    zx_status_t MapInterrupt(uint32_t index, zx::interrupt* out) {
+        return MapInterrupt(index, 0, out);
+    }
 
+    zx_status_t GetBti(uint32_t index, zx::bti* out){
+        return pdev_get_bti(&pdev_, index, out->reset_and_get_address());
+    }
 
+    zx_status_t GetInfo(uint32_t index, pdev_device_info_t* out){
+        return pdev_get_device_info(&pdev_, out);
+    }
 
 private:
 
@@ -37,9 +53,6 @@ private:
 
     uint32_t mmio_count_ = 0;
     fbl::Vector<MmioBlock> mmio_;
-
-
-
 };
 
 
