@@ -31,17 +31,17 @@ static pbus_boot_metadata_t meta[] = {
 
 static const pbus_gpio_t audio_gpios[] = {
     {
-        // touch interrupt
-        .gpio = S905D2_GPIOZ(4),
+        // AUDIO_SOC_FAULT_L
+        .gpio = S905D2_GPIOA(4),
     },
     {
-        // touch reset
-        .gpio = S905D2_GPIOZ(9),
+        // SOC_AUDIO_EN
+        .gpio = S905D2_GPIOA(5),
     },
 };
 
 
-static const pbus_mmio_t tdm_audio_mmios[] = {
+static const pbus_mmio_t audio_mmios[] = {
     {
         .base = S905D2_EE_AUDIO_BASE,
         .length = S905D2_EE_AUDIO_LENGTH
@@ -55,13 +55,12 @@ static const pbus_bti_t tdm_btis[] = {
     },
 };
 
-static const pbus_i2c_channel_t tdm_i2c[] = {
+static const pbus_i2c_channel_t codec_i2c[] = {
     {
         .bus_id = 2,
         .address = 0x48,
     },
 };
-
 
 static pbus_dev_t aml_tdm_dev = {
     .name = teststr,
@@ -70,10 +69,10 @@ static pbus_dev_t aml_tdm_dev = {
     .did = PDEV_DID_AMLOGIC_TDM,
     .gpios = audio_gpios,
     .gpio_count = countof(audio_gpios),
-    .i2c_channels = tdm_i2c,
-    .i2c_channel_count = countof(tdm_i2c),
-    .mmios = tdm_audio_mmios,
-    .mmio_count = countof(tdm_audio_mmios),
+    .i2c_channels = codec_i2c,
+    .i2c_channel_count = countof(codec_i2c),
+    .mmios = audio_mmios,
+    .mmio_count = countof(audio_mmios),
     .btis = tdm_btis,
     .bti_count = countof(tdm_btis),
     .boot_metadata = meta,
@@ -81,6 +80,20 @@ static pbus_dev_t aml_tdm_dev = {
 };
 
 zx_status_t astro_tdm_init(aml_bus_t* bus) {
+
+    //Config of peripheral pins should be done in the board file vs. the peripheral
+    // driver since peripherals can often be muxed to one of many pins.  This allows
+    // the peripheral driver to remain agnostic to specific board wiring.
+
+    // TDM pin assignments
+    gpio_set_alt_function(&bus->gpio, S905D2_GPIOA(1), S905D2_GPIOA_1_TDMB_SCLK_FN);
+    gpio_set_alt_function(&bus->gpio, S905D2_GPIOA(2), S905D2_GPIOA_2_TDMB_FS_FN);
+    gpio_set_alt_function(&bus->gpio, S905D2_GPIOA(3), S905D2_GPIOA_3_TDMB_D0_FN);
+    gpio_set_alt_function(&bus->gpio, S905D2_GPIOA(6), S905D2_GPIOA_6_TDMB_DIN3_FN);
+
+    // PDM pin assignments
+    gpio_set_alt_function(&bus->gpio, S905D2_GPIOA(7), S905D2_GPIOA_7_PDM_DCLK_FN);
+    gpio_set_alt_function(&bus->gpio, S905D2_GPIOA(8), S905D2_GPIOA_8_PDM_DIN0_FN);
 
 
     gpio_config(&bus->gpio, S905D2_GPIOA(5), GPIO_DIR_OUT);
