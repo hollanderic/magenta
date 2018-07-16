@@ -174,3 +174,32 @@
 #define S905D2_UART_CTS_A_FN          1
 #define S905D2_UART_RTS_A             S905D2_GPIOX(15)
 #define S905D2_UART_RTS_A_FN          1
+#if 0
+    aml_snd_iomap {
+        compatible = "amlogic, snd-iomap";
+        status = "okay";
+        #address-cells=<2>;
+        #size-cells=<2>;
+        ranges;
+        pdm_bus {
+            reg = <0x0 0xFF640000 0x0 0x2000>;
+        };
+        audiobus_base {
+            reg = <0x0 0xFF642000 0x0 0x2000>;
+        };
+        audiolocker_base {
+            reg = <0x0 0xFF64A000 0x0 0x2000>;
+        };
+        eqdrc_base {
+            reg = <0x0 0xFF642800 0x0 0x1800>;
+        };
+        reset_base {
+            reg = <0x0 0xFFD01000 0x0 0x1000>;
+        };
+    };
+#endif
+#define S905D2_PDM_BASE        (0xff640000)
+#define S905D2_PDM_LENGTH      (0x2000)
+
+#define S905D2_EE_AUDIO_BASE        (0xff642000)
+#define S905D2_EE_AUDIO_LENGTH      (0x1000)
