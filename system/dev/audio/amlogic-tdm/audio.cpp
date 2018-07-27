@@ -3,6 +3,8 @@
 #include <ddktl/pdev.h>
 
 #include "audio.h"
+#include "aml-audio.h"
+
 
 namespace audio {
 namespace astro {
@@ -54,6 +56,17 @@ zx_status_t AmlAudioStream::Create(zx_device_t* parent) {
         zxlogf(ERROR,"%s failed to create tdm device\n",__func__);
         return ZX_ERR_NO_MEMORY;
     }
+    zxlogf(INFO, "Setting mclk\n");
+    stream->tdm_->SetMclk(EE_AUDIO_MCLK_A, FCLK_DIV4, 20);
+
+    zxlogf(INFO, "Setting sclk\n");
+    stream->tdm_->SetSclk(EE_AUDIO_MCLK_A, 1, 0, 255);
+
+    zxlogf(INFO, "Setting tdmoutclk\n");
+    stream->tdm_->SetTdmOutClk(EE_AUDIO_TDMOUTB, EE_AUDIO_MCLK_A,
+                               EE_AUDIO_MCLK_A, false);
+    zxlogf(INFO, "Enabling clk\n");
+    stream->tdm_->AudioClkEna(EE_AUDIO_CLK_GATE_TDMOUTB);
 
     zxlogf(INFO,"%s created successfully\n",__func__);
     __UNUSED auto dummy = stream.leak_ref();

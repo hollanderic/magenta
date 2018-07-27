@@ -19,6 +19,7 @@
 #include <fbl/vector.h>
 
 #include <soc/aml-common/aml-tdm.h>
+#include "aml-audio.h"
 
 
 class AmlTdmDevice : public fbl::unique_ptr<AmlTdmDevice> {
@@ -26,17 +27,29 @@ class AmlTdmDevice : public fbl::unique_ptr<AmlTdmDevice> {
 public:
     static fbl::unique_ptr<AmlTdmDevice> Create(ddk::MmioBlock&& mmio);
 
+    //Configure an mclk channel (a..f) with source and divider
+    zx_status_t SetMclk(uint32_t ch, ee_audio_mclk_src_t src, uint32_t div);
+    //Configure an sclk/lclk generator block
+    zx_status_t SetSclk(uint32_t ch, uint32_t sdiv,
+                        uint32_t lrduty, uint32_t lrdiv);
+    //Configure signals driving the output block (sclk, lrclk)
+    zx_status_t SetTdmOutClk(uint32_t tdm_blk, uint32_t sclk_src,
+                                       uint32_t lrclk_src, bool inv);
 
+    void AudioClkEna(uint32_t audio_blk_mask);
 private:
     //static int IrqThread(void* arg);
 
     friend class fbl::unique_ptr<AmlTdmDevice>;
 
     AmlTdmDevice() { };
+
     void InitRegs();
 
+    uint32_t tdm_out_ch_;    //Which tdm output block this instance uses
+    uint32_t frddr_ch_;     //which fromddr channel is used by this instance
+
     ddk::MmioBlock mmio_;
-    //fbl::unique_ptr<ddk::MmioBlock<uint32_t>> uregs_;
 
     virtual ~AmlTdmDevice();
 
