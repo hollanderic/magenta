@@ -66,6 +66,8 @@ static uint32_t astro_get_board_rev(aml_bus_t* bus) {
 }
 
 static int aml_start_thread(void* arg) {
+    zxlogf(INFO,"%s\n",__func__);
+
     aml_bus_t* bus = arg;
     zx_status_t status;
 
@@ -130,6 +132,7 @@ static int aml_start_thread(void* arg) {
     if ((status = aml_sdio_init(bus)) != ZX_OK) {
         zxlogf(ERROR, "aml_sdio_init failed: %d\n", status);
         goto fail;
+
     }
 
     if ((status = ams_light_init(bus)) != ZX_OK) {
@@ -154,6 +157,10 @@ static int aml_start_thread(void* arg) {
         goto fail;
     }
 
+    if ((status = astro_tdm_init(bus)) != ZX_OK) {
+        zxlogf(ERROR, "astro_tdm_init failed: %d\n", status);
+        goto fail;
+    }
     return ZX_OK;
 fail:
     zxlogf(ERROR, "aml_start_thread failed, not all devices have been initialized\n");
@@ -161,6 +168,7 @@ fail:
 }
 
 static zx_status_t aml_bus_bind(void* ctx, zx_device_t* parent) {
+    zxlogf(INFO,"%s\n",__func__);
     aml_bus_t* bus = calloc(1, sizeof(aml_bus_t));
     if (!bus) {
         return ZX_ERR_NO_MEMORY;
@@ -191,6 +199,7 @@ static zx_status_t aml_bus_bind(void* ctx, zx_device_t* parent) {
     if (status != ZX_OK) {
         goto fail;
     }
+    zxlogf(INFO,"%s\n",__func__);
 
     thrd_t t;
     int thrd_rc = thrd_create_with_name(&t, aml_start_thread, bus, "aml_start_thread");
