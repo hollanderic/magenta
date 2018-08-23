@@ -17,13 +17,12 @@
 
 fbl::unique_ptr<AmlTdmDevice> AmlTdmDevice::Create(ddk::MmioBlock&& mmio) {
 
+    if (!mmio.isMapped()) {
+        return nullptr;
+    }
     auto tdm_dev = fbl::unique_ptr<AmlTdmDevice>(new AmlTdmDevice());
-    zxlogf(INFO,"before\n");
-    mmio.Info();
+
     tdm_dev->mmio_ = mmio.release();
-    zxlogf(INFO,"after\n");
-    mmio.Info();
-    tdm_dev->mmio_.Info();
 
     tdm_dev->InitRegs();
 
@@ -34,7 +33,7 @@ fbl::unique_ptr<AmlTdmDevice> AmlTdmDevice::Create(ddk::MmioBlock&& mmio) {
 /* Notes
     -div is desired divider minus 1. (want /100? write 99)
 */
-zx_status_t AmlTdmDevice::SetMclk(uint32_t ch, ee_audio_mclk_src_t src, uint32_t div) {
+zx_status_t AmlTdmDevice::SetMclk(aml_tdm_mclk_t ch, ee_audio_mclk_src_t src, uint32_t div) {
     zx_off_t ptr = EE_AUDIO_MCLK_A_CTRL + (ch * sizeof(uint32_t));
     mmio_.Write(EE_AUDIO_MCLK_ENA | (src << 24) | (div & 0xffff), ptr);
     return ZX_OK;
@@ -59,8 +58,9 @@ zx_status_t AmlTdmDevice::SetSclk(uint32_t ch, uint32_t sdiv,
     return ZX_OK;
 }
 
-zx_status_t AmlTdmDevice::SetTdmOutClk(uint32_t tdm_blk, uint32_t sclk_src,
-                                       uint32_t lrclk_src, bool inv) {
+zx_status_t AmlTdmDevice::SetTdmOutClk(aml_tdm_out_t tdm_blk, aml_tdm_mclk_t sclk_src,
+                                       aml_tdm_mclk_t lrclk_src, bool inv) {
+
     zx_off_t ptr = EE_AUDIO_CLK_TDMOUT_A_CTL + tdm_blk * sizeof(uint32_t);
     mmio_.Write( (0x3 << 30) | //Enable the clock
                  (inv ? (1 << 29) : 0) | //invert sclk
@@ -73,11 +73,36 @@ void AmlTdmDevice::AudioClkEna(uint32_t audio_blk_mask) {
     mmio_.SetBits( audio_blk_mask, EE_AUDIO_CLK_GATE_EN);
 }
 
+
+
 void AmlTdmDevice::InitRegs() {
-
     //uregs_->SetBits(0x00002000, AML_TDM_CLK_GATE_EN);
+}
 
+#if 0
+void AmlTdmDevice::SetFRDDR(aml_tdm_out_t tdm_blk, frddrch) {
 
+}
+/*
+    bit_offset - bit position in frame where first slot will appear
+                    (position 0 is concurrent with frame sync)
+    num_slots - number of slots per frame
+    bits_per_slot - width of each slot
+    bits_per_sample - number of bits in sample
+*/
+
+void AmlTdmDevice::ConfigSlot(aml_tdm_out_t tdm_blk, uint8_t bit_offset,
+                                uint8_t num_slots, uint8_t bits_per_slot,
+                                uint8_t bits_per_sample, uint8_t packing) {
+    mmio_.Clear
+
+}
+#endif
+void AmlTdmDevice::Disable(aml_tdm_out_t tdm_blk) {
+    mmio_.ClearBits(1 << 31, get_tdm_out_off(tdm_blk) + TDMOUT_CTRL0_OFFS);
+}
+void AmlTdmDevice::Enable(aml_tdm_out_t tdm_blk) {
+    mmio_.SetBits(1 << 31, get_tdm_out_off(tdm_blk) + TDMOUT_CTRL0_OFFS);
 }
 
 AmlTdmDevice::~AmlTdmDevice() {

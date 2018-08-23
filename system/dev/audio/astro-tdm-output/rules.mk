@@ -13,6 +13,7 @@ MODULE_SRCS += \
     $(LOCAL_DIR)/audio.cpp \
     $(LOCAL_DIR)/aml-tdm.cpp \
     $(LOCAL_DIR)/tas27xx.cpp \
+    $(LOCAL_DIR)/pinned-buffer.cpp
 
 MODULE_LIBS := \
   system/ulib/c \
@@ -26,6 +27,7 @@ MODULE_STATIC_LIBS := \
   system/ulib/ddktl \
   system/ulib/dispatcher-pool \
   system/ulib/fbl \
+  system/ulib/fzl \
   system/ulib/sync \
   system/ulib/zx \
   system/ulib/zxcpp \

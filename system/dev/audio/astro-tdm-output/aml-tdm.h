@@ -28,15 +28,18 @@ public:
     static fbl::unique_ptr<AmlTdmDevice> Create(ddk::MmioBlock&& mmio);
 
     //Configure an mclk channel (a..f) with source and divider
-    zx_status_t SetMclk(uint32_t ch, ee_audio_mclk_src_t src, uint32_t div);
+    zx_status_t SetMclk(aml_tdm_mclk_t ch, ee_audio_mclk_src_t src, uint32_t div);
     //Configure an sclk/lclk generator block
     zx_status_t SetSclk(uint32_t ch, uint32_t sdiv,
                         uint32_t lrduty, uint32_t lrdiv);
     //Configure signals driving the output block (sclk, lrclk)
-    zx_status_t SetTdmOutClk(uint32_t tdm_blk, uint32_t sclk_src,
-                                       uint32_t lrclk_src, bool inv);
+    zx_status_t SetTdmOutClk(aml_tdm_out_t tdm_blk, aml_tdm_mclk_t sclk_src,
+                                       aml_tdm_mclk_t lrclk_src, bool inv);
 
     void AudioClkEna(uint32_t audio_blk_mask);
+    void Disable(aml_tdm_out_t tdm_blk);
+    void Enable(aml_tdm_out_t tdm_blk);
+
 private:
     //static int IrqThread(void* arg);
 
@@ -53,7 +56,6 @@ private:
 
     virtual ~AmlTdmDevice();
 
-
 #if 0
     fbl::Mutex lock_;
     fbl::Mutex req_lock_ __TA_ACQUIRED_AFTER(lock_);
@@ -67,3 +69,13 @@ private:
     uint32_t ring_buffer_size_  = 0;
 #endif
 };
+
+/* Get the resgister block offset for a given tdm out block */
+static inline zx_off_t get_tdm_out_off(aml_tdm_out_t tdm_blk) {
+    switch (tdm_blk) {
+        case TDM_OUT_A: return EE_AUDIO_TDMOUT_A_CTRL0;
+        case TDM_OUT_B: return EE_AUDIO_TDMOUT_B_CTRL0;
+        case TDM_OUT_C: return EE_AUDIO_TDMOUT_C_CTRL0;
+    }
+    return EE_AUDIO_TDMOUT_A_CTRL0;
+}

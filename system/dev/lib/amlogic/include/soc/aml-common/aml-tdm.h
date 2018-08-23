@@ -11,6 +11,29 @@
 //dTDM
 #define AML_TDM_METADATA (0x4d445400 | DEVICE_METADATA_DRIVER_DATA)
 
+
+#define TDMOUT_CTRL0_OFFS     (0x00)
+#define TDMOUT_CTRL1_OFFS     (0x04)
+#define TDMOUT_SWAP_OFFS      (0x08)
+#define TDMOUT_MASK0_OFFS     (0x0c)
+#define TDMOUT_MASK1_OFFS     (0x10)
+#define TDMOUT_MASK2_OFFS     (0x14)
+#define TDMOUT_MASK3_OFFS     (0x18)
+#define TDMOUT_STAT_OFFS      (0x1c)
+#define TDMOUT_GAIN0_OFFS     (0x20)
+#define TDMOUT_GAIN1_OFFS     (0x24)
+#define TDMOUT_MUTE_VAL_OFFS  (0x28)
+#define TDMOUT_MUTE0_OFFS     (0x2c)
+#define TDMOUT_MUTE1_OFFS     (0x30)
+#define TDMOUT_MUTE2_OFFS     (0x34)
+#define TDMOUT_MUTE3_OFFS     (0x38)
+#define TDMOUT_MASK_VAL_OFFS  (0x3c)
+
+#define EE_AUDIO_TDMOUT_A_CTRL0         (0x140 << 2)
+#define EE_AUDIO_TDMOUT_B_CTRL0         (0x150 << 2)
+#define EE_AUDIO_TDMOUT_C_CTRL0         (0x160 << 2)
+
+
 /* aml_tdm_conf_t is used to pass metadata to a tdm driver in order
     to set its operating parameters.
 */
@@ -33,7 +56,7 @@ typedef struct {
 } aml_tdm_sclk_ctl_t;
 
 typedef enum {
-    MCLK_A,
+    MCLK_A = 0,
     MCLK_B,
     MCLK_C,
     MCLK_D,
@@ -42,7 +65,7 @@ typedef enum {
 } aml_tdm_mclk_t;
 
 typedef enum {
-    TDM_OUT_A,
+    TDM_OUT_A = 0,
     TDM_OUT_B,
     TDM_OUT_C
 } aml_tdm_out_t;

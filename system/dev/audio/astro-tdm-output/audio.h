@@ -22,6 +22,7 @@
 #include <dispatcher-pool/dispatcher-timer.h>
 
 #include "aml-tdm.h"
+#include "pinned-buffer.h"
 #include "tas27xx.h"
 
 namespace audio {
@@ -61,13 +62,19 @@ private:
     AmlAudioStream(zx_device_t* parent)
         : AmlAudioStreamBase(parent) { }
 
+    zx_status_t InitBuffer(size_t size);
+
     platform_device_protocol_t pdev_;
 
     fbl::unique_ptr<Tas27xx> codec_;
 
+    fbl::RefPtr<PinnedBuffer> ring_buffer_;
+
     fbl::unique_ptr<AmlTdmDevice> tdm_;
     ddk::GpioPin audio_en_;
     ddk::GpioPin audio_fault_;
+
+    zx::bti bti_;
 
     virtual ~AmlAudioStream();
 

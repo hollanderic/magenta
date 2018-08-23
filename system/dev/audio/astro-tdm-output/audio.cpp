@@ -21,14 +21,6 @@ zx_status_t AmlAudioStream::Create(zx_device_t* parent) {
 
     fbl::RefPtr<ddk::Pdev> pdev = ddk::Pdev::Create(parent);
 
-    ddk::MmioBlock mmio;
-    mmio = pdev->GetMmio(0);
-
-    if (!mmio.isMapped()) {
-        zxlogf(ERROR,"AmlAudio: Failed to allocate mmio\n");
-        return ZX_ERR_NO_RESOURCES;
-    }
-
     stream->audio_fault_ = pdev->GetGpio(0);
     stream->audio_en_ = pdev->GetGpio(1);
     if (!(stream->audio_fault_.is_valid() && stream->audio_en_.is_valid())) {
@@ -46,17 +38,28 @@ zx_status_t AmlAudioStream::Create(zx_device_t* parent) {
         zxlogf(INFO,"TAS reg%02x = %02x\n", i, stream->codec_->ReadReg(i));
     }
 
-    stream->tdm_ = AmlTdmDevice::Create(mmio.release());
+    pdev->GetBti(0, &stream->bti_);
+
+    stream->tdm_ = AmlTdmDevice::Create(pdev->GetMmio(0).release());
     if (stream->tdm_ == nullptr) {
         zxlogf(ERROR,"%s failed to create tdm device\n", __func__);
         return ZX_ERR_NO_MEMORY;
     }
 
-    stream->tdm_->SetMclk(EE_AUDIO_MCLK_A, HIFI_PLL, 124);
-    stream->tdm_->SetSclk(EE_AUDIO_MCLK_A, 1, 0, 127);
-    stream->tdm_->SetTdmOutClk(EE_AUDIO_TDMOUTB, EE_AUDIO_MCLK_A,
-                               EE_AUDIO_MCLK_A, false);
+    //Setup appropriate tdm clock signals
+    stream->tdm_->SetMclk(MCLK_A, HIFI_PLL, 124);
+    stream->tdm_->SetSclk(MCLK_A, 1, 0, 127);
+
+    stream->tdm_->SetTdmOutClk(TDM_OUT_B, MCLK_A,
+                               MCLK_A, false);
     stream->tdm_->AudioClkEna(EE_AUDIO_CLK_GATE_TDMOUTB);
+
+
+
+
+
+
+    stream->InitBuffer(4096);
 
     zxlogf(INFO,"%s created successfully\n",__func__);
     __UNUSED auto dummy = stream.leak_ref();
@@ -75,6 +78,14 @@ zx_status_t AmlAudioStream::DdkIoctl(uint32_t op,
 }
 
 AmlAudioStream::~AmlAudioStream(void) {}
+
+zx_status_t AmlAudioStream::InitBuffer(size_t size) {
+    ring_buffer_ = PinnedBuffer::Create(size , bti_, ZX_CACHE_POLICY_CACHED);
+
+    return ZX_OK;
+}
+
+
 
 } //astro
 } //audio
