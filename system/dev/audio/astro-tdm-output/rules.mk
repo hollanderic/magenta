@@ -11,7 +11,6 @@ MODULE_TYPE := driver
 MODULE_SRCS += \
     $(LOCAL_DIR)/binding.c \
     $(LOCAL_DIR)/audio.cpp \
-    $(LOCAL_DIR)/aml-tdm.cpp \
     $(LOCAL_DIR)/tas27xx.cpp \
     $(LOCAL_DIR)/pinned-buffer.cpp
 
@@ -21,6 +20,7 @@ MODULE_LIBS := \
   system/ulib/zircon \
 
 MODULE_STATIC_LIBS := \
+  system/dev/lib/amlogic \
   system/ulib/audio-proto-utils \
   system/ulib/audio-driver-proto \
   system/ulib/ddk \

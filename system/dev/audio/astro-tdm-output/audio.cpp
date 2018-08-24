@@ -3,7 +3,6 @@
 #include <ddktl/pdev.h>
 
 #include "audio.h"
-#include "aml-audio.h"
 
 namespace audio {
 namespace astro {
@@ -40,22 +39,20 @@ zx_status_t AmlAudioStream::Create(zx_device_t* parent) {
 
     pdev->GetBti(0, &stream->bti_);
 
-    stream->tdm_ = AmlTdmDevice::Create(pdev->GetMmio(0).release());
-    if (stream->tdm_ == nullptr) {
+    stream->aml_audio_ = AmlAudioDevice::Create(pdev->GetMmio(0).release());
+    if (stream->aml_audio_ == nullptr) {
         zxlogf(ERROR,"%s failed to create tdm device\n", __func__);
         return ZX_ERR_NO_MEMORY;
     }
 
     //Setup appropriate tdm clock signals
-    stream->tdm_->SetMclk(MCLK_A, HIFI_PLL, 124);
-    stream->tdm_->SetSclk(MCLK_A, 1, 0, 127);
+    stream->aml_audio_->SetMclk(MCLK_A, HIFI_PLL, 124);
+    stream->aml_audio_->SetSclk(MCLK_A, 1, 0, 127);
 
-    stream->tdm_->SetTdmOutClk(TDM_OUT_B, MCLK_A,
+    stream->aml_audio_->SetTdmOutClk(TDM_OUT_B, MCLK_A,
                                MCLK_A, false);
-    stream->tdm_->AudioClkEna(EE_AUDIO_CLK_GATE_TDMOUTB);
 
-
-
+    stream->aml_audio_->AudioClkEna(EE_AUDIO_CLK_GATE_TDMOUTB);
 
 
 

@@ -2,25 +2,16 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include <audio-proto-utils/format-utils.h>
 #include <ddk/debug.h>
-#include <ddk/device.h>
-#include <fbl/limits.h>
-#include <string.h>
-#include <zircon/device/audio.h>
-#include <lib/zx/vmar.h>
-#include <ddk/protocol/platform-device.h>
 
-#include "aml-tdm.h"
-#include "aml-audio.h"
+#include <soc/aml-common/aml-audio.h>
 
-
-fbl::unique_ptr<AmlTdmDevice> AmlTdmDevice::Create(ddk::MmioBlock&& mmio) {
+fbl::unique_ptr<AmlAudioDevice> AmlAudioDevice::Create(ddk::MmioBlock&& mmio) {
 
     if (!mmio.isMapped()) {
         return nullptr;
     }
-    auto tdm_dev = fbl::unique_ptr<AmlTdmDevice>(new AmlTdmDevice());
+    auto tdm_dev = fbl::unique_ptr<AmlAudioDevice>(new AmlAudioDevice());
 
     tdm_dev->mmio_ = mmio.release();
 
@@ -33,7 +24,7 @@ fbl::unique_ptr<AmlTdmDevice> AmlTdmDevice::Create(ddk::MmioBlock&& mmio) {
 /* Notes
     -div is desired divider minus 1. (want /100? write 99)
 */
-zx_status_t AmlTdmDevice::SetMclk(aml_tdm_mclk_t ch, ee_audio_mclk_src_t src, uint32_t div) {
+zx_status_t AmlAudioDevice::SetMclk(aml_tdm_mclk_t ch, ee_audio_mclk_src_t src, uint32_t div) {
     zx_off_t ptr = EE_AUDIO_MCLK_A_CTRL + (ch * sizeof(uint32_t));
     mmio_.Write(EE_AUDIO_MCLK_ENA | (src << 24) | (div & 0xffff), ptr);
     return ZX_OK;
@@ -46,7 +37,7 @@ zx_status_t AmlTdmDevice::SetMclk(aml_tdm_mclk_t ch, ee_audio_mclk_src_t src, ui
         appears that it is running properly as a lrclk is still generated at
         an expected rate (lrclk is derived from sclk)
 */
-zx_status_t AmlTdmDevice::SetSclk(uint32_t ch, uint32_t sdiv,
+zx_status_t AmlAudioDevice::SetSclk(uint32_t ch, uint32_t sdiv,
                                   uint32_t lrduty, uint32_t lrdiv) {
     zx_off_t ptr = EE_AUDIO_MST_A_SCLK_CTRL0 + 2 * ch * sizeof(uint32_t);
     mmio_.Write(    (0x3 << 30) |      //Enable the channel
@@ -58,7 +49,7 @@ zx_status_t AmlTdmDevice::SetSclk(uint32_t ch, uint32_t sdiv,
     return ZX_OK;
 }
 
-zx_status_t AmlTdmDevice::SetTdmOutClk(aml_tdm_out_t tdm_blk, aml_tdm_mclk_t sclk_src,
+zx_status_t AmlAudioDevice::SetTdmOutClk(aml_tdm_out_t tdm_blk, aml_tdm_mclk_t sclk_src,
                                        aml_tdm_mclk_t lrclk_src, bool inv) {
 
     zx_off_t ptr = EE_AUDIO_CLK_TDMOUT_A_CTL + tdm_blk * sizeof(uint32_t);
@@ -69,18 +60,18 @@ zx_status_t AmlTdmDevice::SetTdmOutClk(aml_tdm_out_t tdm_blk, aml_tdm_mclk_t scl
     return ZX_OK;
 }
 
-void AmlTdmDevice::AudioClkEna(uint32_t audio_blk_mask) {
+void AmlAudioDevice::AudioClkEna(uint32_t audio_blk_mask) {
     mmio_.SetBits( audio_blk_mask, EE_AUDIO_CLK_GATE_EN);
 }
 
 
 
-void AmlTdmDevice::InitRegs() {
+void AmlAudioDevice::InitRegs() {
     //uregs_->SetBits(0x00002000, AML_TDM_CLK_GATE_EN);
 }
 
 #if 0
-void AmlTdmDevice::SetFRDDR(aml_tdm_out_t tdm_blk, frddrch) {
+void AmlAudioDevice::SetFRDDR(aml_tdm_out_t tdm_blk, frddrch) {
 
 }
 /*
@@ -91,20 +82,20 @@ void AmlTdmDevice::SetFRDDR(aml_tdm_out_t tdm_blk, frddrch) {
     bits_per_sample - number of bits in sample
 */
 
-void AmlTdmDevice::ConfigSlot(aml_tdm_out_t tdm_blk, uint8_t bit_offset,
+void AmlAudioDevice::ConfigSlot(aml_tdm_out_t tdm_blk, uint8_t bit_offset,
                                 uint8_t num_slots, uint8_t bits_per_slot,
                                 uint8_t bits_per_sample, uint8_t packing) {
     mmio_.Clear
 
 }
 #endif
-void AmlTdmDevice::Disable(aml_tdm_out_t tdm_blk) {
+void AmlAudioDevice::TdmOutDisable(aml_tdm_out_t tdm_blk) {
     mmio_.ClearBits(1 << 31, get_tdm_out_off(tdm_blk) + TDMOUT_CTRL0_OFFS);
 }
-void AmlTdmDevice::Enable(aml_tdm_out_t tdm_blk) {
+void AmlAudioDevice::TdmOutEnable(aml_tdm_out_t tdm_blk) {
     mmio_.SetBits(1 << 31, get_tdm_out_off(tdm_blk) + TDMOUT_CTRL0_OFFS);
 }
 
-AmlTdmDevice::~AmlTdmDevice() {
+AmlAudioDevice::~AmlAudioDevice() {
 
 }

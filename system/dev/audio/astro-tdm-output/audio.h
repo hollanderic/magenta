@@ -21,7 +21,8 @@
 #include <dispatcher-pool/dispatcher-execution-domain.h>
 #include <dispatcher-pool/dispatcher-timer.h>
 
-#include "aml-tdm.h"
+#include <soc/aml-common/aml-audio.h>
+
 #include "pinned-buffer.h"
 #include "tas27xx.h"
 
@@ -70,7 +71,7 @@ private:
 
     fbl::RefPtr<PinnedBuffer> ring_buffer_;
 
-    fbl::unique_ptr<AmlTdmDevice> tdm_;
+    fbl::unique_ptr<AmlAudioDevice> aml_audio_;
     ddk::GpioPin audio_en_;
     ddk::GpioPin audio_fault_;
 

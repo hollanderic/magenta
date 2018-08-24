@@ -7,10 +7,7 @@
 #include <ddk/io-buffer.h>
 #include <ddk/protocol/i2c.h>
 #include <ddk/protocol/platform-device.h>
-#include <ddktl/device.h>
-#include <ddktl/device-internal.h>
 #include <ddktl/mmio.h>
-#include <zircon/listnode.h>
 #include <lib/zx/bti.h>
 #include <lib/zx/vmo.h>
 #include <fbl/mutex.h>
@@ -18,7 +15,22 @@
 #include <fbl/unique_ptr.h>
 #include <fbl/vector.h>
 
-#include <soc/aml-common/aml-audio.h>
+#include <soc/aml-common/aml-audio-regs.h>
+
+typedef enum {
+    MCLK_A = 0,
+    MCLK_B,
+    MCLK_C,
+    MCLK_D,
+    MCLK_E,
+    MCLK_F
+} aml_tdm_mclk_t;
+
+typedef enum {
+    TDM_OUT_A = 0,
+    TDM_OUT_B,
+    TDM_OUT_C
+} aml_tdm_out_t;
 
 class AmlAudioDevice : public fbl::unique_ptr<AmlAudioDevice> {
 
