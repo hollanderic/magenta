@@ -43,6 +43,19 @@
 #define EE_AUDIO_CLK_TDMOUT_B_CTL     0x0094
 #define EE_AUDIO_CLK_TDMOUT_C_CTL     0x0098
 
+
+//FRDDR control reg blocks and offsets
+#define FRDDR_CTRL0_OFFS        (0x00)
+#define FRDDR_CTRL1_OFFS        (0x04)
+#define FRDDR_START_ADDR_OFFS   (0x08)
+#define FRDDR_FINISH_ADDR_OFFS  (0x0c)
+
+#define EE_AUDIO_FRDDR_A_CTRL0       (0x70 << 4)
+#define EE_AUDIO_FRDDR_B_CTRL0       (0x80 << 4)
+#define EE_AUDIO_FRDDR_C_CTRL0       (0x90 << 4)
+
+#define EE_AUDIO_ARB_CTRL             (0xa0 << 4)
+
 //TDMOUT control regs (common to three seperate units)
 #define TDMOUT_CTRL0_OFFS     (0x00)
 #define TDMOUT_CTRL1_OFFS     (0x04)

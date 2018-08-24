@@ -32,6 +32,33 @@ typedef enum {
     TDM_OUT_C
 } aml_tdm_out_t;
 
+typedef enum {
+    FRDDR_A = 0,
+    FRDDR_B,
+    FRDDR_C
+} aml_frddr_t;
+
+
+/* Get the resgister block offset for a given tdm out block */
+static inline zx_off_t get_tdm_out_off(aml_tdm_out_t tdm_blk) {
+    switch (tdm_blk) {
+        case TDM_OUT_A: return EE_AUDIO_TDMOUT_A_CTRL0;
+        case TDM_OUT_B: return EE_AUDIO_TDMOUT_B_CTRL0;
+        case TDM_OUT_C: return EE_AUDIO_TDMOUT_C_CTRL0;
+    }
+    return EE_AUDIO_TDMOUT_A_CTRL0;
+}
+
+/* Get the resgister block offset for a given tdm out block */
+static inline zx_off_t get_frddr_off(aml_frddr_t frddr) {
+    switch (frddr) {
+        case FRDDR_A: return EE_AUDIO_FRDDR_A_CTRL0;
+        case FRDDR_B: return EE_AUDIO_FRDDR_B_CTRL0;
+        case FRDDR_C: return EE_AUDIO_FRDDR_C_CTRL0;
+    }
+    return EE_AUDIO_FRDDR_A_CTRL0;
+}
+
 class AmlAudioDevice : public fbl::unique_ptr<AmlAudioDevice> {
 
 public:
@@ -50,7 +77,12 @@ public:
     void TdmOutDisable(aml_tdm_out_t tdm_blk);
     void TdmOutEnable(aml_tdm_out_t tdm_blk);
     void TdmOutReset(aml_tdm_out_t tdm_blk);
-
+    void ConfigTdmOutSlot(aml_tdm_out_t tdm_blk, uint8_t bit_offset,
+                    uint8_t num_slots, uint8_t bits_per_slot,
+                    uint8_t bits_per_sample);
+    void ConfigFRDDR(aml_frddr_t ddr, aml_tdm_out_t tdm,
+                    zx_paddr_t buf, size_t len);
+    void FRDDREnable(aml_frddr_t ddr);
 private:
     //static int IrqThread(void* arg);
 
@@ -80,13 +112,3 @@ private:
     uint32_t ring_buffer_size_  = 0;
 #endif
 };
-
-/* Get the resgister block offset for a given tdm out block */
-static inline zx_off_t get_tdm_out_off(aml_tdm_out_t tdm_blk) {
-    switch (tdm_blk) {
-        case TDM_OUT_A: return EE_AUDIO_TDMOUT_A_CTRL0;
-        case TDM_OUT_B: return EE_AUDIO_TDMOUT_B_CTRL0;
-        case TDM_OUT_C: return EE_AUDIO_TDMOUT_C_CTRL0;
-    }
-    return EE_AUDIO_TDMOUT_A_CTRL0;
-}

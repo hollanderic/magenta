@@ -49,14 +49,23 @@ zx_status_t AmlAudioStream::Create(zx_device_t* parent) {
     stream->aml_audio_->SetMclk(MCLK_A, HIFI_PLL, 124);
     stream->aml_audio_->SetSclk(MCLK_A, 1, 0, 127);
 
-    stream->aml_audio_->SetTdmOutClk(TDM_OUT_B, MCLK_A,
-                               MCLK_A, false);
+    stream->aml_audio_->SetTdmOutClk(TDM_OUT_B, MCLK_A, MCLK_A, false);
 
-    stream->aml_audio_->AudioClkEna(EE_AUDIO_CLK_GATE_TDMOUTB);
+    stream->aml_audio_->AudioClkEna(EE_AUDIO_CLK_GATE_TDMOUTB |
+                                    EE_AUDIO_CLK_GATE_FRDDRC | 1);
 
-
+    stream->aml_audio_->ConfigTdmOutSlot(TDM_OUT_B, 1, 3, 31, 15);
 
     stream->InitBuffer(4096);
+
+    //zx_paddr_t phys;
+    //stream->ring_buffer_->LookupPhys(0, &phys);
+    //stream->aml_audio_->ConfigFRDDR(FRDDR_C, TDM_OUT_B,
+    //                    phys, 4096);
+
+    stream->aml_audio_->TdmOutReset(TDM_OUT_B);
+    //stream->aml_audio_->FRDDREnable(FRDDR_C);
+    stream->aml_audio_->TdmOutEnable(TDM_OUT_B);
 
     zxlogf(INFO,"%s created successfully\n",__func__);
     __UNUSED auto dummy = stream.leak_ref();
@@ -78,6 +87,10 @@ AmlAudioStream::~AmlAudioStream(void) {}
 
 zx_status_t AmlAudioStream::InitBuffer(size_t size) {
     ring_buffer_ = PinnedBuffer::Create(size , bti_, ZX_CACHE_POLICY_CACHED);
+    uint16_t *buff = static_cast<uint16_t*>(ring_buffer_->GetBaseAddress());
+    for (uint16_t i=0; i<4096/2; i++) {
+        buff[i] = i;
+    }
 
     return ZX_OK;
 }
