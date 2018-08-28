@@ -79,7 +79,7 @@ void AmlAudioDevice::ConfigFRDDR(aml_frddr_t ddr, aml_tdm_out_t tdm, zx_paddr_t 
     //Interrupts off
     //ack delay = 0
     //send to selected tdm block
-    mmio_.Write(tdm, get_frddr_off(ddr) + FRDDR_CTRL0_OFFS);
+    mmio_.Write(tdm | (1 << 3), get_frddr_off(ddr) + FRDDR_CTRL0_OFFS);
 
     //set tdm block to use this ddr
     uint32_t reg = mmio_.Read(get_tdm_out_off(tdm) +  TDMOUT_CTRL1_OFFS);
@@ -93,7 +93,7 @@ void AmlAudioDevice::ConfigFRDDR(aml_frddr_t ddr, aml_tdm_out_t tdm, zx_paddr_t 
     // is pointer to the last 64-bit fetch (inclusive)
     mmio_.Write( static_cast<uint32_t>(buf), get_frddr_off(ddr) + FRDDR_START_ADDR_OFFS);
     mmio_.Write( static_cast<uint32_t>(buf + len - 8),
-        get_frddr_off(ddr) + FRDDR_START_ADDR_OFFS);
+        get_frddr_off(ddr) + FRDDR_FINISH_ADDR_OFFS);
 }
 
 /*
@@ -107,7 +107,7 @@ void AmlAudioDevice::ConfigTdmOutSlot(aml_tdm_out_t tdm_blk, uint8_t bit_offset,
                                 uint8_t num_slots, uint8_t bits_per_slot,
                                 uint8_t bits_per_sample) {
 
-    uint32_t reg = bits_per_slot | (num_slots << 5) | (bit_offset << 15);
+    uint32_t reg = (0xf << 24) | bits_per_slot | (num_slots << 5) | (bit_offset << 15);
     mmio_.Write(reg , get_tdm_out_off(tdm_blk) + TDMOUT_CTRL0_OFFS);
 
     reg = (bits_per_sample << 8);
@@ -121,7 +121,7 @@ void AmlAudioDevice::ConfigTdmOutSlot(aml_tdm_out_t tdm_blk, uint8_t bit_offset,
         // 32/24 bit sample, left justify in slot, split 64-bit dma fetch into 2 samples
         reg |= (3 << 4);
     }
-    mmio_.Write(reg , get_tdm_out_off(tdm_blk) + TDMOUT_CTRL1_OFFS);
+    mmio_.Write(reg | 0x0f , get_tdm_out_off(tdm_blk) + TDMOUT_CTRL1_OFFS);
 
     // zero the mask/mute values inserted into masked/muted slots
     mmio_.Write(0 , get_tdm_out_off(tdm_blk) + TDMOUT_MASK_VAL_OFFS);
@@ -131,6 +131,9 @@ void AmlAudioDevice::ConfigTdmOutSlot(aml_tdm_out_t tdm_blk, uint8_t bit_offset,
     mmio_.Write(0x00000010 , get_tdm_out_off(tdm_blk) + TDMOUT_SWAP_OFFS);
     // unmask first two slots
     mmio_.Write(0x00000003 , get_tdm_out_off(tdm_blk) + TDMOUT_MASK0_OFFS);
+    mmio_.Write(0x0000aaaa , get_tdm_out_off(tdm_blk) + TDMOUT_MUTE_VAL_OFFS);
+    mmio_.Write(0x0000cccc , get_tdm_out_off(tdm_blk) + TDMOUT_MASK_VAL_OFFS);
+
 }
 
 void AmlAudioDevice::TdmOutDisable(aml_tdm_out_t tdm_blk) {

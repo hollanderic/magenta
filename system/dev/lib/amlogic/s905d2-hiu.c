@@ -25,6 +25,17 @@ zx_status_t s905d2_hiu_init(zx_handle_t bti, aml_hiu_dev_t* device) {
     }
 
     device->virt_regs = (zx_vaddr_t)(io_buffer_virt(&device->regs_iobuff));
+
+
+    //hiu_clk_set_reg(device, 0x30 << 2, 0xffffffff);
+    //hiu_clk_set_reg(device, 0x31 << 2, 0xffffffff);
+    //hiu_clk_set_reg(device, 0x32 << 2, 0xffffffff);
+
+
+    //hiu_clk_set_reg(device, 0x50 << 2, 0xffffffff);
+    //hiu_clk_set_reg(device, 0x51 << 2, 0xffffffff);
+    //hiu_clk_set_reg(device, 0x52 << 2, 0xffffffff);
+
     zxlogf(INFO,"GCLK2_MPG0 = %08x\n", hiu_clk_get_reg(device,0x30 << 2));
     zxlogf(INFO,"GCLK2_MPG1 = %08x\n", hiu_clk_get_reg(device,0x31 << 2));
     zxlogf(INFO,"GCLK2_MPG2 = %08x\n", hiu_clk_get_reg(device,0x32 << 2));

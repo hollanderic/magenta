@@ -92,8 +92,8 @@ private:
 
     void InitRegs();
 
-    uint32_t tdm_out_ch_;    //Which tdm output block this instance uses
-    uint32_t frddr_ch_;     //which fromddr channel is used by this instance
+    uint32_t tdm_out_ch_;    //tdm output block used by this instance
+    uint32_t frddr_ch_;     // fromddr channel used by this instance
 
     ddk::MmioBlock mmio_;
 

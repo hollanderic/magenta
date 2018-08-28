@@ -50,11 +50,11 @@
 #define FRDDR_START_ADDR_OFFS   (0x08)
 #define FRDDR_FINISH_ADDR_OFFS  (0x0c)
 
-#define EE_AUDIO_FRDDR_A_CTRL0       (0x70 << 4)
-#define EE_AUDIO_FRDDR_B_CTRL0       (0x80 << 4)
-#define EE_AUDIO_FRDDR_C_CTRL0       (0x90 << 4)
+#define EE_AUDIO_FRDDR_A_CTRL0       (0x70 << 2)
+#define EE_AUDIO_FRDDR_B_CTRL0       (0x80 << 2)
+#define EE_AUDIO_FRDDR_C_CTRL0       (0x90 << 2)
 
-#define EE_AUDIO_ARB_CTRL             (0xa0 << 4)
+#define EE_AUDIO_ARB_CTRL             (0xa0 << 2)
 
 //TDMOUT control regs (common to three seperate units)
 #define TDMOUT_CTRL0_OFFS     (0x00)
