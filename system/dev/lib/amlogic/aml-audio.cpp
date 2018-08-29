@@ -81,13 +81,9 @@ void AmlAudioDevice::ConfigFRDDR(aml_frddr_t ddr, aml_tdm_out_t tdm, zx_paddr_t 
     //send to selected tdm block
     mmio_.Write(tdm | (1 << 3), get_frddr_off(ddr) + FRDDR_CTRL0_OFFS);
 
-    //set tdm block to use this ddr
-    //uint32_t reg = mmio_.Read(get_tdm_out_off(tdm) +  TDMOUT_CTRL1_OFFS);
-    //reg = (reg & ~(0x3 << 24)) | (ddr << 24);
-    //mmio_.Write(reg, get_tdm_out_off(tdm) +  TDMOUT_CTRL1_OFFS);
-
     //use 64 levels of fifo, start transfer request when fifo is at 32
-    //set the magic force end bit to cause fetch from start????
+    //set the magic force end bit(12) to cause fetch from start
+    //  -this only happens when the bit is set from 0->1 (edge)
     mmio_.Write((1 << 12) | (31 << 24) | (15 << 16), get_frddr_off(ddr) + FRDDR_CTRL1_OFFS);
 
     //Write the start and end pointers.  Each fetch is 64-bits, so end poitner
@@ -104,7 +100,7 @@ void AmlAudioDevice::ConfigFRDDR(aml_frddr_t ddr, aml_tdm_out_t tdm, zx_paddr_t 
     bits_per_slot - width of each slot minus one
     bits_per_sample - number of bits in sample minus one
 */
-void AmlAudioDevice::ConfigTdmOutSlot(aml_tdm_out_t tdm_blk, uint8_t bit_offset,
+void AmlAudioDevice::ConfigTdmOutSlot(aml_tdm_out_t tdm_blk, aml_frddr_t ddr, uint8_t bit_offset,
                                 uint8_t num_slots, uint8_t bits_per_slot,
                                 uint8_t bits_per_sample) {
 
@@ -112,7 +108,7 @@ void AmlAudioDevice::ConfigTdmOutSlot(aml_tdm_out_t tdm_blk, uint8_t bit_offset,
     mmio_.Write(reg , get_tdm_out_off(tdm_blk) + TDMOUT_CTRL0_OFFS);
     mmio_.Write(reg , get_tdm_out_off(tdm_blk) + TDMOUT_CTRL0_OFFS);
 
-    reg = (bits_per_sample << 8) | (FRDDR_B << 24);
+    reg = (bits_per_sample << 8) | (ddr << 24);
     if (bits_per_sample <= 8) {
         // 8 bit sample, left justify in frame, split 64-bit dma fetch into 8 samples
         reg |= (0 << 4);

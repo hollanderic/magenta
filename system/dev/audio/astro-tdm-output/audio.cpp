@@ -38,10 +38,6 @@ zx_status_t AmlAudioStream::Create(zx_device_t* parent) {
         zxlogf(INFO,"TAS reg%02x = %02x\n", i, stream->codec_->ReadReg(i));
     }
 
-    stream->audio_en_.Write(1);
-    stream->codec_->Init();
-
-
     pdev->GetBti(0, &stream->bti_);
 
     stream->aml_audio_ = AmlAudioDevice::Create(pdev->GetMmio(0).release());
@@ -50,6 +46,7 @@ zx_status_t AmlAudioStream::Create(zx_device_t* parent) {
         return ZX_ERR_NO_MEMORY;
     }
 
+    //Dummy buffer for testing
     stream->InitBuffer(4096);
     zx_paddr_t phys;
     stream->ring_buffer_->LookupPhys(0, &phys);
@@ -57,7 +54,7 @@ zx_status_t AmlAudioStream::Create(zx_device_t* parent) {
     stream->aml_audio_->ConfigFRDDR(FRDDR_B, TDM_OUT_B,
                         phys, 4096);
 
-    stream->aml_audio_->ConfigTdmOutSlot(TDM_OUT_B, 3, 3, 31, 15);
+    stream->aml_audio_->ConfigTdmOutSlot(TDM_OUT_B, FRDDR_B, 3, 3, 31, 15);
 
     //Setup appropriate tdm clock signals
     stream->aml_audio_->SetMclk(MCLK_A, HIFI_PLL, 124);
@@ -65,7 +62,6 @@ zx_status_t AmlAudioStream::Create(zx_device_t* parent) {
     stream->aml_audio_->SetSclk(MCLK_A, 1, 0, 127);
 
     stream->aml_audio_->SetTdmOutClk(TDM_OUT_B, MCLK_A, MCLK_A, false);
-
 
     stream->aml_audio_->AudioClkEna(EE_AUDIO_CLK_GATE_TDMOUTB |
                                     EE_AUDIO_CLK_GATE_FRDDRB | 1 );
@@ -75,6 +71,12 @@ zx_status_t AmlAudioStream::Create(zx_device_t* parent) {
     stream->aml_audio_->TdmOutReset(TDM_OUT_B);
     stream->aml_audio_->FRDDREnable(FRDDR_B);
     stream->aml_audio_->TdmOutEnable(TDM_OUT_B);
+
+    //Enable Codec
+    stream->audio_en_.Write(1);
+
+    //Initialize Codec
+    stream->codec_->Init();
 
     zxlogf(INFO,"%s created successfully\n",__func__);
     __UNUSED auto dummy = stream.leak_ref();

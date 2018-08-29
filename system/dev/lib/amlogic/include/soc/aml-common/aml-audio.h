@@ -77,16 +77,15 @@ public:
     void TdmOutDisable(aml_tdm_out_t tdm_blk);
     void TdmOutEnable(aml_tdm_out_t tdm_blk);
     void TdmOutReset(aml_tdm_out_t tdm_blk);
-    void ConfigTdmOutSlot(aml_tdm_out_t tdm_blk, uint8_t bit_offset,
-                    uint8_t num_slots, uint8_t bits_per_slot,
-                    uint8_t bits_per_sample);
+    void ConfigTdmOutSlot(aml_tdm_out_t tdm_blk, aml_frddr_t ddr,
+                    uint8_t bit_offset, uint8_t num_slots,
+                    uint8_t bits_per_slot, uint8_t bits_per_sample);
     void ConfigFRDDR(aml_frddr_t ddr, aml_tdm_out_t tdm,
                     zx_paddr_t buf, size_t len);
     void FRDDREnable(aml_frddr_t ddr);
     void Position(aml_frddr_t ddr);
 
 private:
-    //static int IrqThread(void* arg);
 
     friend class fbl::unique_ptr<AmlAudioDevice>;
 
@@ -100,17 +99,4 @@ private:
     ddk::MmioBlock mmio_;
 
     virtual ~AmlAudioDevice();
-
-#if 0
-    fbl::Mutex lock_;
-    fbl::Mutex req_lock_ __TA_ACQUIRED_AFTER(lock_);
-
-    // Dispatcher framework state
-    fbl::RefPtr<dispatcher::Channel> stream_channel_ __TA_GUARDED(lock_);
-    fbl::RefPtr<dispatcher::Channel> rb_channel_     __TA_GUARDED(lock_);
-    fbl::RefPtr<dispatcher::ExecutionDomain> default_domain_;
-
-    uint32_t ring_buffer_phys_  = 0;
-    uint32_t ring_buffer_size_  = 0;
-#endif
 };
