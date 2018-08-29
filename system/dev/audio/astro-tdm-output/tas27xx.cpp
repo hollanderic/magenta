@@ -69,16 +69,18 @@ zx_status_t Tas27xx::Init() {
     status = WriteReg(CLOCK_CFG, (0x06 << 2) | 1);
     if (status != ZX_OK) return status;
 
-    // 48kHz, FSYNC on low to high transition
+    // 48kHz, FSYNC on high to low transition
+    // Disable autorate detection
     status = WriteReg(TDM_CFG0, (1 << 4) | (0x03 << 1) | 1);
     if (status != ZX_OK) return status;
 
-    // Left justified, offset 1 bclk, clock on falling edge of sclk
-    status = WriteReg(TDM_CFG1, (1 << 1) |  1);
+    // Left justified, offset 0 bclk, clock on falling edge of sclk
+    //  our fsync is on falling edge, so first bit after falling edge is valid
+    status = WriteReg(TDM_CFG1, (0 << 1) |  1);
     if (status != ZX_OK) return status;
 
     // Mono (L+R)/2, 32bit sample, 32bit slot
-    status = WriteReg(TDM_CFG2, (0x03 << 4) | (0x03 << 2) | 0x03);
+    status = WriteReg(TDM_CFG2, (0x03 << 4) | (0x00 << 2) | 0x03);
     if (status != ZX_OK) return status;
 
     // Left channel slot 0, Right channel slot 1

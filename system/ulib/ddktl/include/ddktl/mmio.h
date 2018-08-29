@@ -49,7 +49,7 @@ public:
     T Read(zx_off_t offs) {
         ZX_DEBUG_ASSERT(offs + sizeof(T) < len_);
         ZX_DEBUG_ASSERT(ptr_);
-        return *reinterpret_cast<T*>(ptr_ + offs);
+        return *reinterpret_cast<volatile T*>(ptr_ + offs);
     }
 
     template <typename T = uint32_t>
@@ -61,7 +61,7 @@ public:
     void Write(T val, zx_off_t offs) {
         ZX_DEBUG_ASSERT(offs + sizeof(T) < len_);
         ZX_DEBUG_ASSERT(ptr_);
-        *reinterpret_cast<T*>(ptr_ + offs) = val;
+        *reinterpret_cast<volatile T*>(ptr_ + offs) = val;
         hw_mb();
     }
 

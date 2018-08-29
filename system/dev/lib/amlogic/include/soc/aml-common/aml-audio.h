@@ -83,6 +83,8 @@ public:
     void ConfigFRDDR(aml_frddr_t ddr, aml_tdm_out_t tdm,
                     zx_paddr_t buf, size_t len);
     void FRDDREnable(aml_frddr_t ddr);
+    void Position(aml_frddr_t ddr);
+
 private:
     //static int IrqThread(void* arg);
 

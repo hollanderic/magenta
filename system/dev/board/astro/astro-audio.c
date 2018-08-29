@@ -101,7 +101,7 @@ zx_status_t astro_tdm_init(aml_bus_t* bus) {
     // TDM pin assignments
     gpio_set_alt_function(&bus->gpio, S905D2_GPIOA(1), S905D2_GPIOA_1_TDMB_SCLK_FN);
     gpio_set_alt_function(&bus->gpio, S905D2_GPIOA(2), S905D2_GPIOA_2_TDMB_FS_FN);
-    //gpio_set_alt_function(&bus->gpio, S905D2_GPIOA(3), S905D2_GPIOA_3_TDMB_D0_FN);
+    gpio_set_alt_function(&bus->gpio, S905D2_GPIOA(3), S905D2_GPIOA_3_TDMB_D0_FN);
     gpio_set_alt_function(&bus->gpio, S905D2_GPIOA(6), S905D2_GPIOA_6_TDMB_DIN3_FN);
 
     // PDM pin assignments
@@ -111,8 +111,8 @@ zx_status_t astro_tdm_init(aml_bus_t* bus) {
     gpio_config(&bus->gpio, S905D2_GPIOA(5), GPIO_DIR_OUT);
     gpio_write(&bus->gpio, S905D2_GPIOA(5), 1);
 
-    gpio_config(&bus->gpio, S905D2_GPIOA(3), GPIO_DIR_OUT);
-    gpio_write(&bus->gpio, S905D2_GPIOA(3), 1);
+    //gpio_config(&bus->gpio, S905D2_GPIOA(3), GPIO_DIR_OUT);
+    //gpio_write(&bus->gpio, S905D2_GPIOA(3), 1);
 
     status = pbus_device_add(&bus->pbus, &aml_tdm_dev);
     if (status != ZX_OK) {

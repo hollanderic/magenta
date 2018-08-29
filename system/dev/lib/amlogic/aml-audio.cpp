@@ -82,12 +82,13 @@ void AmlAudioDevice::ConfigFRDDR(aml_frddr_t ddr, aml_tdm_out_t tdm, zx_paddr_t 
     mmio_.Write(tdm | (1 << 3), get_frddr_off(ddr) + FRDDR_CTRL0_OFFS);
 
     //set tdm block to use this ddr
-    uint32_t reg = mmio_.Read(get_tdm_out_off(tdm) +  TDMOUT_CTRL1_OFFS);
-    reg = (reg & ~(0x3 << 24)) | (ddr << 24);
-    mmio_.Write(reg, get_tdm_out_off(tdm) +  TDMOUT_CTRL1_OFFS);
+    //uint32_t reg = mmio_.Read(get_tdm_out_off(tdm) +  TDMOUT_CTRL1_OFFS);
+    //reg = (reg & ~(0x3 << 24)) | (ddr << 24);
+    //mmio_.Write(reg, get_tdm_out_off(tdm) +  TDMOUT_CTRL1_OFFS);
 
     //use 64 levels of fifo, start transfer request when fifo is at 32
-    mmio_.Write((64 << 24) | (32 << 16), get_frddr_off(ddr) + FRDDR_CTRL1_OFFS);
+    //set the magic force end bit to cause fetch from start????
+    mmio_.Write((1 << 12) | (31 << 24) | (15 << 16), get_frddr_off(ddr) + FRDDR_CTRL1_OFFS);
 
     //Write the start and end pointers.  Each fetch is 64-bits, so end poitner
     // is pointer to the last 64-bit fetch (inclusive)
@@ -107,32 +108,32 @@ void AmlAudioDevice::ConfigTdmOutSlot(aml_tdm_out_t tdm_blk, uint8_t bit_offset,
                                 uint8_t num_slots, uint8_t bits_per_slot,
                                 uint8_t bits_per_sample) {
 
-    uint32_t reg = (0xf << 24) | bits_per_slot | (num_slots << 5) | (bit_offset << 15);
+    uint32_t reg = bits_per_slot | (num_slots << 5) | (bit_offset << 15);
+    mmio_.Write(reg , get_tdm_out_off(tdm_blk) + TDMOUT_CTRL0_OFFS);
     mmio_.Write(reg , get_tdm_out_off(tdm_blk) + TDMOUT_CTRL0_OFFS);
 
-    reg = (bits_per_sample << 8);
+    reg = (bits_per_sample << 8) | (FRDDR_B << 24);
     if (bits_per_sample <= 8) {
         // 8 bit sample, left justify in frame, split 64-bit dma fetch into 8 samples
         reg |= (0 << 4);
     } else if (bits_per_sample <= 16) {
         // 16 bit sample, left justify in frame, split 64-bit dma fetch into 2 samples
-        reg |= (1 << 4);
+        reg |= (2 << 4);
     } else {
         // 32/24 bit sample, left justify in slot, split 64-bit dma fetch into 2 samples
-        reg |= (3 << 4);
+        reg |= (4 << 4);
     }
-    mmio_.Write(reg | 0x0f , get_tdm_out_off(tdm_blk) + TDMOUT_CTRL1_OFFS);
 
-    // zero the mask/mute values inserted into masked/muted slots
-    mmio_.Write(0 , get_tdm_out_off(tdm_blk) + TDMOUT_MASK_VAL_OFFS);
-    mmio_.Write(0 , get_tdm_out_off(tdm_blk) + TDMOUT_MUTE_VAL_OFFS);
+    mmio_.Write(reg, get_tdm_out_off(tdm_blk) + TDMOUT_CTRL1_OFFS);
 
     // assign left ch to slot 1, right to slot 1
     mmio_.Write(0x00000010 , get_tdm_out_off(tdm_blk) + TDMOUT_SWAP_OFFS);
     // unmask first two slots
     mmio_.Write(0x00000003 , get_tdm_out_off(tdm_blk) + TDMOUT_MASK0_OFFS);
-    mmio_.Write(0x0000aaaa , get_tdm_out_off(tdm_blk) + TDMOUT_MUTE_VAL_OFFS);
-    mmio_.Write(0x0000cccc , get_tdm_out_off(tdm_blk) + TDMOUT_MASK_VAL_OFFS);
+    // Value to be inserted in a slot if it is muted
+    mmio_.Write(0x00000000 , get_tdm_out_off(tdm_blk) + TDMOUT_MUTE_VAL_OFFS);
+    // Value to be inserted in a slot if it is masked
+    mmio_.Write(0x00000000 , get_tdm_out_off(tdm_blk) + TDMOUT_MASK_VAL_OFFS);
 
 }
 
@@ -151,6 +152,20 @@ void AmlAudioDevice::TdmOutReset(aml_tdm_out_t tdm_blk) {
     mmio_.ClearBits(3 << 28, get_tdm_out_off(tdm_blk) + TDMOUT_CTRL0_OFFS);
     mmio_.SetBits(1 << 29, get_tdm_out_off(tdm_blk) + TDMOUT_CTRL0_OFFS);
     mmio_.SetBits(1 << 28, get_tdm_out_off(tdm_blk) + TDMOUT_CTRL0_OFFS);
+}
+
+void AmlAudioDevice::Position(aml_frddr_t ddr) {
+    zxlogf(INFO,"DDR CTL0 = %08x\n",mmio_.Read(get_frddr_off(ddr) + FRDDR_CTRL0_OFFS));
+    zxlogf(INFO,"DDR CTL1 = %08x\n",mmio_.Read(get_frddr_off(ddr) + FRDDR_CTRL1_OFFS));
+    zxlogf(INFO,"STAUS1 = %08x\n",mmio_.Read(get_frddr_off(ddr) + FRDDR_STATUS1_OFFS));
+    zxlogf(INFO,"STAUS2 = %08x\n",mmio_.Read(get_frddr_off(ddr) + FRDDR_STATUS2_OFFS));
+    zxlogf(INFO,"START = %08x\n",mmio_.Read(get_frddr_off(ddr) + FRDDR_START_ADDR_OFFS));
+    zxlogf(INFO,"END = %08x\n",mmio_.Read(get_frddr_off(ddr) + FRDDR_FINISH_ADDR_OFFS));
+    zxlogf(INFO,"TDM STAT = %08x\n", mmio_.Read(get_tdm_out_off(TDM_OUT_B) + TDMOUT_STAT_OFFS));
+    zxlogf(INFO,"TDM CTL0 = %08x\n", mmio_.Read(get_tdm_out_off(TDM_OUT_B) + TDMOUT_CTRL0_OFFS));
+    zxlogf(INFO,"TDM CTL1 = %08x\n", mmio_.Read(get_tdm_out_off(TDM_OUT_B) + TDMOUT_CTRL1_OFFS));
+    zxlogf(INFO, "CLK ENA MASK = %08x\n", mmio_.Read(EE_AUDIO_CLK_GATE_EN));
+
 }
 
 AmlAudioDevice::~AmlAudioDevice() {

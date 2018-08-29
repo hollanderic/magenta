@@ -49,6 +49,10 @@
 #define FRDDR_CTRL1_OFFS        (0x04)
 #define FRDDR_START_ADDR_OFFS   (0x08)
 #define FRDDR_FINISH_ADDR_OFFS  (0x0c)
+#define FRDDR_INT_ADDR_OFFS     (0x10)
+#define FRDDR_STATUS1_OFFS      (0x14)
+#define FRDDR_STATUS2_OFFS      (0x18)
+
 
 #define EE_AUDIO_FRDDR_A_CTRL0       (0x70 << 2)
 #define EE_AUDIO_FRDDR_B_CTRL0       (0x80 << 2)

@@ -1,6 +1,7 @@
 
 #include <ddk/debug.h>
 #include <ddktl/pdev.h>
+#include <math.h>
 
 #include "audio.h"
 
@@ -37,6 +38,10 @@ zx_status_t AmlAudioStream::Create(zx_device_t* parent) {
         zxlogf(INFO,"TAS reg%02x = %02x\n", i, stream->codec_->ReadReg(i));
     }
 
+    stream->audio_en_.Write(1);
+    stream->codec_->Init();
+
+
     pdev->GetBti(0, &stream->bti_);
 
     stream->aml_audio_ = AmlAudioDevice::Create(pdev->GetMmio(0).release());
@@ -46,32 +51,26 @@ zx_status_t AmlAudioStream::Create(zx_device_t* parent) {
     }
 
     stream->InitBuffer(4096);
+    zx_paddr_t phys;
+    stream->ring_buffer_->LookupPhys(0, &phys);
 
+    stream->aml_audio_->ConfigFRDDR(FRDDR_B, TDM_OUT_B,
+                        phys, 4096);
+
+    stream->aml_audio_->ConfigTdmOutSlot(TDM_OUT_B, 3, 3, 31, 15);
 
     //Setup appropriate tdm clock signals
     stream->aml_audio_->SetMclk(MCLK_A, HIFI_PLL, 124);
+
     stream->aml_audio_->SetSclk(MCLK_A, 1, 0, 127);
+
     stream->aml_audio_->SetTdmOutClk(TDM_OUT_B, MCLK_A, MCLK_A, false);
 
 
     stream->aml_audio_->AudioClkEna(EE_AUDIO_CLK_GATE_TDMOUTB |
-                                    EE_AUDIO_CLK_GATE_FRDDRB | 1 | (0x3f << 23));
-
+                                    EE_AUDIO_CLK_GATE_FRDDRB | 1 );
 
     zx_nanosleep(zx_deadline_after(ZX_MSEC(20)));
-
-
-
-
-    zx_paddr_t phys;
-    stream->ring_buffer_->LookupPhys(0, &phys);
-    stream->aml_audio_->ConfigFRDDR(FRDDR_B, TDM_OUT_B,
-                        phys, 4096);
-
-
-
-
-    stream->aml_audio_->ConfigTdmOutSlot(TDM_OUT_B, 1, 3, 31, 15);
 
     stream->aml_audio_->TdmOutReset(TDM_OUT_B);
     stream->aml_audio_->FRDDREnable(FRDDR_B);
@@ -98,8 +97,24 @@ AmlAudioStream::~AmlAudioStream(void) {}
 zx_status_t AmlAudioStream::InitBuffer(size_t size) {
     ring_buffer_ = PinnedBuffer::Create(size , bti_, ZX_CACHE_POLICY_CACHED);
     uint16_t *buff = static_cast<uint16_t*>(ring_buffer_->GetBaseAddress());
-    for (uint16_t i=0; i<4096/2; i++) {
-        buff[i] = i;
+    for (uint16_t i=0; i < 1024; i++) {
+        //buff[2*i] = static_cast<uint16_t>(i*64);
+        //buff[2*i + 1] = static_cast<uint16_t>(i*64);
+#if 0
+        buff[2*i] = 0;
+        buff[2*i+1] = 0;
+
+        buff[512+2*i] = 0;
+        buff[512+2*i+1] = 0;
+
+        buff[1024+2*i] = 0x8000;
+        buff[1024+2*i+1] = 0x8000;
+
+        buff[1536+2*i] = 0x7fff;
+        buff[1536+2*i+1] = 0x7fff;
+#endif
+        buff[2*i] = buff[2*i+1]= static_cast<int16_t>(10000*sin(2 * M_PI * i / 128));
+        //zxlogf(INFO,"%d\n",buff[2*i]);
     }
     zx_cache_flush(buff, 4096, ZX_CACHE_FLUSH_DATA | ZX_CACHE_FLUSH_INVALIDATE);
     return ZX_OK;
