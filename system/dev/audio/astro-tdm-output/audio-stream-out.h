@@ -10,6 +10,7 @@
 #include <ddktl/device.h>
 #include <ddktl/device-internal.h>
 #include <ddktl/gpio_pin.h>
+#include <lib/fzl/pinned-vmo.h>
 #include <lib/simple-audio-stream/simple-audio-stream.h>
 #include <lib/zx/bti.h>
 #include <lib/zx/vmo.h>
@@ -31,12 +32,6 @@ class AstroAudioStreamOut : public SimpleAudioStream {
 public:
     static zx_status_t Create(zx_device_t* parent);
 
-    // DDK device implementation
-    //void DdkUnbind();
-    //void DdkRelease();
-    //zx_status_t DdkIoctl(uint32_t op,
-    //                     const void* in_buf, size_t in_len,
-    //                     void* out_buf, size_t out_len, size_t* out_actual);
 protected:
     zx_status_t Init() __TA_REQUIRES(domain_->token()) override;
     zx_status_t ChangeFormat(const audio_proto::StreamSetFmtReq& req)
@@ -68,7 +63,8 @@ private:
 
     fbl::unique_ptr<Tas27xx> codec_;
 
-    fbl::RefPtr<PinnedBuffer> ring_buffer_;
+    zx::vmo ring_buffer_vmo_;
+    fzl::PinnedVmo pinned_ring_buffer_;
 
     fbl::unique_ptr<AmlTdmDevice> aml_audio_;
     ddk::GpioPin audio_en_;

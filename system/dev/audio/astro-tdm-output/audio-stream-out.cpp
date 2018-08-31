@@ -50,11 +50,11 @@ zx_status_t AstroAudioStreamOut::Create(zx_device_t* parent) {
     stream->codec_->Init();
 
     //Dummy buffer for testing
-    stream->InitBuffer(4096);
-    zx_paddr_t phys;
-    stream->ring_buffer_->LookupPhys(0, &phys);
+    //stream->InitBuffer(4096);
+    //zx_paddr_t phys;
+    //stream->ring_buffer_->LookupPhys(0, &phys);
 
-    stream->aml_audio_->SetBuffer(phys, 4096);
+    //stream->aml_audio_->SetBuffer(phys, 4096);
 
     stream->aml_audio_->ConfigTdmOutSlot(3, 3, 31, 15);
 
@@ -62,8 +62,6 @@ zx_status_t AstroAudioStreamOut::Create(zx_device_t* parent) {
     stream->aml_audio_->SetMclkDiv(124);
 
     stream->aml_audio_->SetSclkDiv(1, 0, 127);
-
-    //zx_nanosleep(zx_deadline_after(ZX_MSEC(20)));
 
     stream->aml_audio_->TdmOutReset();
     stream->aml_audio_->FRDDREnable();
@@ -101,12 +99,14 @@ AstroAudioStreamOut::~AstroAudioStreamOut(void) {}
 
 // Test routine for putting a tone in the ring buffer
 zx_status_t AstroAudioStreamOut::InitBuffer(size_t size) {
+#if 0
     ring_buffer_ = PinnedBuffer::Create(size , bti_, ZX_CACHE_POLICY_CACHED);
     uint16_t *buff = static_cast<uint16_t*>(ring_buffer_->GetBaseAddress());
     for (uint16_t i=0; i < 1024; i++) {
         buff[2*i] = buff[2*i+1]= static_cast<int16_t>(10000*sin(2 * M_PI * i / 128));
     }
     zx_cache_flush(buff, 4096, ZX_CACHE_FLUSH_DATA | ZX_CACHE_FLUSH_INVALIDATE);
+#endif
     return ZX_OK;
 }
 
