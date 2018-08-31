@@ -87,7 +87,9 @@ zx_status_t Tas27xx::Init() {
     status = WriteReg(TDM_CFG3, (1 << 4) | 0);
     if (status != ZX_OK) return status;
 
+    // Initial gain -20db
     SetGain(-20);
+
     // Disable v and i sense, enter active mode
     status = WriteReg(PWR_CTL, (0x03 << 2));
     if (status != ZX_OK) return status;

@@ -10,6 +10,7 @@
 #include <ddktl/device.h>
 #include <ddktl/device-internal.h>
 #include <ddktl/gpio_pin.h>
+#include <dispatcher-pool/dispatcher-timer.h>
 #include <lib/fzl/pinned-vmo.h>
 #include <lib/simple-audio-stream/simple-audio-stream.h>
 #include <lib/zx/bti.h>
@@ -30,7 +31,7 @@ namespace astro {
 
 class AstroAudioStreamOut : public SimpleAudioStream {
 public:
-    static zx_status_t Create(zx_device_t* parent);
+    AstroAudioStreamOut(zx_device_t* parent);
 
 protected:
     zx_status_t Init() __TA_REQUIRES(domain_->token()) override;
@@ -41,6 +42,7 @@ protected:
                           zx::vmo* out_buffer) __TA_REQUIRES(domain_->token()) override;
     zx_status_t Start(uint64_t* out_start_time) __TA_REQUIRES(domain_->token()) override;
     zx_status_t Stop() __TA_REQUIRES(domain_->token()) override;
+    zx_status_t InitPost();
 
 
 private:
@@ -50,16 +52,23 @@ private:
     // TODO(hollande) - the fifo bytes are adjustable on the audio fifos and should be scaled
     //                  with the desired sample rate.  Since this first pass has a fixed sample
     //                  sample rate we will set as constant for now.
-    //                  We are using fifo C at this stage, which is max of 128 (64-bit wide)
-    //                  Using 64 levels for now.
-    static constexpr uint8_t kFifoDepth = 0x40;
+    //                  We are using fifo B at this stage, which is max of 64 (64-bit wide)
+    //                  Using 32 levels for now.
+    static constexpr uint8_t kFifoDepth = 0x20;
 
-    AstroAudioStreamOut(zx_device_t* parent) :
-        SimpleAudioStream(parent, false) {}
-
+    zx_status_t AddFormats();
     zx_status_t InitBuffer(size_t size);
+    zx_status_t InitPdev();
+    zx_status_t ProcessRingNotification();
 
-    platform_device_protocol_t pdev_;
+    uint32_t us_per_notification_ = 0;
+    volatile bool running_;
+
+    fbl::RefPtr<dispatcher::Timer> notify_timer_;
+
+    zx_device_t* parent_;
+
+    fbl::RefPtr<ddk::Pdev> pdev_;
 
     fbl::unique_ptr<Tas27xx> codec_;
 

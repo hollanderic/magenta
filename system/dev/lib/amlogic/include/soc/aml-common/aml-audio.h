@@ -50,7 +50,8 @@ public:
                     uint8_t bits_per_slot, uint8_t bits_per_sample);
     void SetBuffer(zx_paddr_t buf, size_t len);
     void FRDDREnable();
-    void Position(aml_frddr_t ddr);
+    void FRDDRDisable();
+    uint32_t GetRingPosition();
 
 private:
 

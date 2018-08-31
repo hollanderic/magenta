@@ -77,7 +77,10 @@ zx_status_t AmlTdmDevice::SetMclkDiv(uint32_t div) {
     mmio_.SetBits((1 << 31) | (div & 0xffff), ptr);
     return ZX_OK;
 }
-
+uint32_t AmlTdmDevice::GetRingPosition() {
+    return mmio_.Read(GetFrddrOffset(FRDDR_STATUS2_OFFS)) -
+           mmio_.Read(GetFrddrOffset(FRDDR_START_ADDR_OFFS));
+}
 /* Notes:
     -sdiv is desired divider -1 (Want a divider of 10? write a value of 9)
     -sclk needs to be at least 2x mclk.  writing a value of 0 (/1) to sdiv
@@ -151,28 +154,22 @@ void AmlTdmDevice::TdmOutEnable() {
 }
 
 void AmlTdmDevice::FRDDREnable() {
+    //Set the load bit, will make sure things start from beginning of buffer
+    mmio_.SetBits(1 << 12, GetFrddrOffset(FRDDR_CTRL1_OFFS));
+
     mmio_.SetBits(1 << 31, GetFrddrOffset(FRDDR_CTRL0_OFFS));
+}
+
+void AmlTdmDevice::FRDDRDisable() {
+    mmio_.ClearBits(1 << 12, GetFrddrOffset(FRDDR_CTRL1_OFFS));
+
+    mmio_.ClearBits(1 << 31, GetFrddrOffset(FRDDR_CTRL0_OFFS));
 }
 
 void AmlTdmDevice::TdmOutReset() {
     mmio_.ClearBits(3 << 28, GetTdmOffset(TDMOUT_CTRL0_OFFS));
     mmio_.SetBits(1 << 29, GetTdmOffset(TDMOUT_CTRL0_OFFS));
     mmio_.SetBits(1 << 28, GetTdmOffset(TDMOUT_CTRL0_OFFS));
-}
-
-void AmlTdmDevice::Position(aml_frddr_t ddr) {
-#if 0
-    zxlogf(INFO,"DDR CTL0 = %08x\n",mmio_.Read(get_frddr_off(ddr) + FRDDR_CTRL0_OFFS));
-    zxlogf(INFO,"DDR CTL1 = %08x\n",mmio_.Read(get_frddr_off(ddr) + FRDDR_CTRL1_OFFS));
-    zxlogf(INFO,"STAUS1 = %08x\n",mmio_.Read(get_frddr_off(ddr) + FRDDR_STATUS1_OFFS));
-    zxlogf(INFO,"STAUS2 = %08x\n",mmio_.Read(get_frddr_off(ddr) + FRDDR_STATUS2_OFFS));
-    zxlogf(INFO,"START = %08x\n",mmio_.Read(get_frddr_off(ddr) + FRDDR_START_ADDR_OFFS));
-    zxlogf(INFO,"END = %08x\n",mmio_.Read(get_frddr_off(ddr) + FRDDR_FINISH_ADDR_OFFS));
-    zxlogf(INFO,"TDM STAT = %08x\n", mmio_.Read(get_tdm_out_off(TDM_OUT_B) + TDMOUT_STAT_OFFS));
-    zxlogf(INFO,"TDM CTL0 = %08x\n", mmio_.Read(get_tdm_out_off(TDM_OUT_B) + TDMOUT_CTRL0_OFFS));
-    zxlogf(INFO,"TDM CTL1 = %08x\n", mmio_.Read(get_tdm_out_off(TDM_OUT_B) + TDMOUT_CTRL1_OFFS));
-    zxlogf(INFO, "CLK ENA MASK = %08x\n", mmio_.Read(EE_AUDIO_CLK_GATE_EN));
-#endif
 }
 
 AmlTdmDevice::~AmlTdmDevice() {
