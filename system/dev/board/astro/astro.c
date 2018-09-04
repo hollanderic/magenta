@@ -130,6 +130,7 @@ static int aml_start_thread(void* arg) {
     if ((status = aml_sdio_init(bus)) != ZX_OK) {
         zxlogf(ERROR, "aml_sdio_init failed: %d\n", status);
         goto fail;
+
     }
 
     if ((status = ams_light_init(bus)) != ZX_OK) {
@@ -154,6 +155,10 @@ static int aml_start_thread(void* arg) {
         goto fail;
     }
 
+    if ((status = astro_tdm_init(bus)) != ZX_OK) {
+        zxlogf(ERROR, "astro_tdm_init failed: %d\n", status);
+        goto fail;
+    }
     return ZX_OK;
 fail:
     zxlogf(ERROR, "aml_start_thread failed, not all devices have been initialized\n");
