@@ -8,6 +8,16 @@ __BEGIN_CDECLS
 
 // clang-format off
 
+//PDM control registers
+#define PDM_CTRL                    (0x00 << 2)
+
+#define PDM_CHAN_CTRL               (0x07 << 2)
+#define PDM_CHAN_CTRL1              (0x08 << 2)
+
+#define PDM_CLKG_CTRL               (0x0b << 2)
+
+
+//Clock control registers
 #define EE_AUDIO_MCLK_ENA            (1 << 31)
 
 #define EE_AUDIO_CLK_GATE_EN        0x0000
@@ -35,6 +45,8 @@ __BEGIN_CDECLS
 #define EE_AUDIO_CLK_TDMOUT_B_CTL     0x0094
 #define EE_AUDIO_CLK_TDMOUT_C_CTL     0x0098
 
+#define EE_AUDIO_CLK_PDMIN_CTRL0      0x00ac
+#define EE_AUDIO_CLK_PDMIN_CTRL1      0x00b0
 
 //FRDDR control reg blocks and offsets
 #define FRDDR_CTRL0_OFFS        (0x00)
@@ -45,7 +57,9 @@ __BEGIN_CDECLS
 #define FRDDR_STATUS1_OFFS      (0x14)
 #define FRDDR_STATUS2_OFFS      (0x18)
 
-
+#define EE_AUDIO_TODDR_A_CTRL0       (0x40 << 2)
+#define EE_AUDIO_TODDR_B_CTRL0       (0x50 << 2)
+#define EE_AUDIO_TODDR_C_CTRL0       (0x60 << 2)
 #define EE_AUDIO_FRDDR_A_CTRL0       (0x70 << 2)
 #define EE_AUDIO_FRDDR_B_CTRL0       (0x80 << 2)
 #define EE_AUDIO_FRDDR_C_CTRL0       (0x90 << 2)
@@ -87,6 +101,11 @@ __BEGIN_CDECLS
 #define EE_AUDIO_CLK_GATE_FRDDRA     (1 << 9)
 #define EE_AUDIO_CLK_GATE_FRDDRB     (1 << 10)
 #define EE_AUDIO_CLK_GATE_FRDDRC     (1 << 11)
+#define EE_AUDIO_CLK_GATE_TODDRA     (1 << 12)
+#define EE_AUDIO_CLK_GATE_TODDRB     (1 << 13)
+#define EE_AUDIO_CLK_GATE_TODDRC     (1 << 14)
+
+
 
 typedef enum {
     MP0_PLL = 0,
@@ -119,6 +138,12 @@ typedef enum {
     FRDDR_B,
     FRDDR_C
 } aml_frddr_t;
+
+typedef enum {
+    TODDR_A = 0,
+    TODDR_B,
+    TODDR_C
+} aml_toddr_t;
 
 // clang-format on
 __END_CDECLS
