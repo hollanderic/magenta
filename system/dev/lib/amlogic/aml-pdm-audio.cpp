@@ -6,11 +6,60 @@
 #include <fbl/limits.h>
 #include <soc/aml-common/aml-pdm-audio.h>
 
+
+// Filter configurations
+//mode 1 lpf1
+static const int lpf1m1[] = {
+    0x000014, 0xffffb2, 0xfffed9, 0xfffdce, 0xfffd45, 0xfffe32, 0x000147,
+    0x000645, 0x000b86, 0x000e21, 0x000ae3, 0x000000, 0xffeece, 0xffdca8,
+    0xffd212, 0xffd7d1, 0xfff2a7, 0x001f4c, 0x0050c2, 0x0072aa, 0x006ff1,
+    0x003c32, 0xffdc4e, 0xff6a18, 0xff0fef, 0xfefbaf, 0xff4c40, 0x000000,
+    0x00ebc8, 0x01c077, 0x02209e, 0x01c1a4, 0x008e60, 0xfebe52, 0xfcd690,
+    0xfb8fa5, 0xfba498, 0xfd9812, 0x0181ce, 0x06f5f3, 0x0d112f, 0x12a958,
+    0x169686, 0x18000e, 0x169686, 0x12a958, 0x0d112f, 0x06f5f3, 0x0181ce,
+    0xfd9812, 0xfba498, 0xfb8fa5, 0xfcd690, 0xfebe52, 0x008e60, 0x01c1a4,
+    0x02209e, 0x01c077, 0x00ebc8, 0x000000, 0xff4c40, 0xfefbaf, 0xff0fef,
+    0xff6a18, 0xffdc4e, 0x003c32, 0x006ff1, 0x0072aa, 0x0050c2, 0x001f4c,
+    0xfff2a7, 0xffd7d1, 0xffd212, 0xffdca8, 0xffeece, 0x000000, 0x000ae3,
+    0x000e21, 0x000b86, 0x000645, 0x000147, 0xfffe32, 0xfffd45, 0xfffdce,
+    0xfffed9, 0xffffb2, 0x000014,
+};
+//mode 1 lpf3
+static const int lpf3m1[] = {
+    0x000000, 0x000081, 0x000000, 0xfffedb, 0x000000, 0x00022d, 0x000000,
+    0xfffc46, 0x000000, 0x0005f7, 0x000000, 0xfff6eb, 0x000000, 0x000d4e,
+    0x000000, 0xffed1e, 0x000000, 0x001a1c, 0x000000, 0xffdcb0, 0x000000,
+    0x002ede, 0x000000, 0xffc2d1, 0x000000, 0x004ebe, 0x000000, 0xff9beb,
+    0x000000, 0x007dd7, 0x000000, 0xff633a, 0x000000, 0x00c1d2, 0x000000,
+    0xff11d5, 0x000000, 0x012368, 0x000000, 0xfe9c45, 0x000000, 0x01b252,
+    0x000000, 0xfdebf6, 0x000000, 0x0290b8, 0x000000, 0xfcca0d, 0x000000,
+    0x041d7c, 0x000000, 0xfa8152, 0x000000, 0x07e9c6, 0x000000, 0xf28fb5,
+    0x000000, 0x28b216, 0x3fffde, 0x28b216, 0x000000, 0xf28fb5, 0x000000,
+    0x07e9c6, 0x000000, 0xfa8152, 0x000000, 0x041d7c, 0x000000, 0xfcca0d,
+    0x000000, 0x0290b8, 0x000000, 0xfdebf6, 0x000000, 0x01b252, 0x000000,
+    0xfe9c45, 0x000000, 0x012368, 0x000000, 0xff11d5, 0x000000, 0x00c1d2,
+    0x000000, 0xff633a, 0x000000, 0x007dd7, 0x000000, 0xff9beb, 0x000000,
+    0x004ebe, 0x000000, 0xffc2d1, 0x000000, 0x002ede, 0x000000, 0xffdcb0,
+    0x000000, 0x001a1c, 0x000000, 0xffed1e, 0x000000, 0x000d4e, 0x000000,
+    0xfff6eb, 0x000000, 0x0005f7, 0x000000, 0xfffc46, 0x000000, 0x00022d,
+    0x000000, 0xfffedb, 0x000000, 0x000081, 0x000000,
+};
+// osr64 lpf2
+static const int lpf2osr64[] = {
+    0x00050a, 0xfff004, 0x0002c1, 0x003c12, 0xffa818, 0xffc87d, 0x010aef,
+    0xff5223, 0xfebd93, 0x028f41, 0xff5c0e, 0xfc63f8, 0x055f81, 0x000000,
+    0xf478a0, 0x11c5e3, 0x2ea74d, 0x11c5e3, 0xf478a0, 0x000000, 0x055f81,
+    0xfc63f8, 0xff5c0e, 0x028f41, 0xfebd93, 0xff5223, 0x010aef, 0xffc87d,
+    0xffa818, 0x003c12, 0x0002c1, 0xfff004, 0x00050a,
+};
+
+
 //static
 fbl::unique_ptr<AmlPdmDevice> AmlPdmDevice::Create(ddk::MmioBlock pdm_mmio,
                                                    ddk::MmioBlock audio_mmio,
-                                                   ee_audio_mclk_src_t pdm_sysclk_src,
-                                                   ee_audio_mclk_src_t pdm_dclk_src,
+                                                   ee_audio_mclk_src_t pdm_clk_src,
+                                                   uint32_t sysclk_div,
+                                                   uint32_t dclk_div,
                                                    aml_toddr_t toddr_dev) {
 
     if (!(pdm_mmio.isMapped() && audio_mmio.isMapped())) {
@@ -26,24 +75,41 @@ fbl::unique_ptr<AmlPdmDevice> AmlPdmDevice::Create(ddk::MmioBlock pdm_mmio,
 
     fbl::AllocChecker ac;
     auto pdm = fbl::unique_ptr<AmlPdmDevice>(new (&ac)
-        AmlPdmDevice(fbl::move(pdm_mmio), fbl::move(audio_mmio), pdm_sysclk_src,
-                     pdm_dclk_src, toddr_dev, fifo_depth));
+        AmlPdmDevice(fbl::move(pdm_mmio), fbl::move(audio_mmio),
+                     pdm_clk_src, sysclk_div, dclk_div,
+                     toddr_dev, fifo_depth));
     if (!ac.check()) {
         zxlogf(ERROR, "%s: Could not create AmlPdmDevice\n", __func__);
         return nullptr;
     }
 
-
     pdm->InitRegs();
+    pdm->ConfigFilters();
 
     return pdm;
 }
 
 void AmlPdmDevice::InitRegs() {
 
-    //TODO - tease out setting of the dividers to different methods
-    audio_mmio_.Write32((1 << 31) | (dclk_src_ << 24) | 499, EE_AUDIO_CLK_PDMIN_CTRL0);
-    audio_mmio_.Write32((1 << 31) | (sysclk_src_ << 24) | 7, EE_AUDIO_CLK_PDMIN_CTRL1);
+    // Setup toddr block
+    audio_mmio_.Write32((0x02 << 13) | //Right justified 16-bit
+                        (  31 << 8 ) | //msb position of data out of pdm
+                        (  16 << 3 ) | //lsb position of data out of pdm
+                        (0x04 << 0 ),  //select pdm as data source
+                        GetToddrOffset(TODDR_CTRL1_OFFS));
+    audio_mmio_.Write32((fifo_depth_ / 2),  //trigger ddr when fifo half full
+                       GetToddrOffset(TODDR_CTRL1_OFFS));
+
+    // To keep things simple, we are using the same clock sourse for both the
+    //  pdm sysclk and dclk.  Sysclk needs to be ~100-200MHz per AmLogic recommendations.
+    //  dclk is osr*fs
+    // Sysclk must be configured, enabled, and PDM audio clock gated prior to
+    //   accessing any of the registers mapped via pdm_mmio.  Writing without sysclk
+    //   operating properly (and in range) will result in unknown results, reads
+    //   will wedge the system.
+
+    audio_mmio_.Write32((1 << 31) | (clk_src_ << 24) | dclk_div_, EE_AUDIO_CLK_PDMIN_CTRL0);
+    audio_mmio_.Write32((1 << 31) | (clk_src_ << 24) | sysclk_div_, EE_AUDIO_CLK_PDMIN_CTRL1);
 
     audio_mmio_.SetBits32((1 << 31) | (1 << toddr_ch_), EE_AUDIO_ARB_CTRL);
 
@@ -52,69 +118,83 @@ void AmlPdmDevice::InitRegs() {
                 (EE_AUDIO_CLK_GATE_TODDRA << toddr_ch_) |
                  EE_AUDIO_CLK_GATE_ARB);
 
-
-    zxlogf(INFO,"Writing PDM registers....\n");
-    pdm_mmio_.Write32(1, PDM_CLKG_CTRL);
+    // It is now safe to write to pdm registers
     zxlogf(INFO,"Writing PDM registers....\n");
 
-    pdm_mmio_.Write32((1 << 28) | (1 << 8) | (1 << 0), PDM_CTRL);
-    zxlogf(INFO,"Writing PDM registers....\n");
+    //  Enable cts_pdm_clk gate (clock gate within pdm module)
+    pdm_mmio_.SetBits32(1, PDM_CLKG_CTRL);
 
-    pdm_mmio_.Write32((28 << 0), PDM_CHAN_CTRL);
-    zxlogf(INFO,"Writing PDM registers....\n");
+    // Enable Ch 0/1
+    pdm_mmio_.Write32((0x01 << 29) |   // 24bit output mode
+                      (0x03 << 8) |    // Take Ch 0/1 out of reset
+                      (0x03 << 0)      // Enable Ch 0/1
+                      , PDM_CTRL);
 
-    pdm_mmio_.Write32((1 << 28) | (1 <<31) | (1 << 8) | (1 << 0), PDM_CTRL);
-    //pdm_mmio_.SetBits32(1 << 31, PDM_CTRL);
-    zxlogf(INFO,"Writing PDM registers....\n");
-
-    zxlogf(INFO,"PDM_CTRL = %08x\n", pdm_mmio_.Read32(PDM_CTRL));
-#if 0
-    //Set chosen mclk channels input to selected source
-    //Since this is init, set the divider to max value assuming it will
-    //    be set to proper value later (slower is safer from circuit standpoint)
-    //Leave disabled for now.
-    zx_off_t ptr = EE_AUDIO_MCLK_A_CTRL + (mclk_ch_ * sizeof(uint32_t));
-    mmio_.Write32((clk_src_ << 24) | 0xffff, ptr);
-
-    //Set the sclk and lrclk sources to the chosen mclk channel
-    ptr = EE_AUDIO_CLK_TDMOUT_A_CTL + tdm_ch_ * sizeof(uint32_t);
-    mmio_.Write32((0x03 << 30) | (mclk_ch_ << 24) | (mclk_ch_ << 20), ptr);
-
-    //Enable DDR ARB, and enable this ddr channels bit.
-    mmio_.SetBits32((1 << 31) | (1 << (4 + frddr_ch_)), EE_AUDIO_ARB_CTRL);
-
-    //Disable the FRDDR Channel
-    //Only use one buffer
-    //Interrupts off
-    //ack delay = 0
-    //set destination tdm block and enable that selection
-    mmio_.Write32(tdm_ch_ | (1 << 3), GetFrddrOffset(FRDDR_CTRL0_OFFS));
-    //use entire fifo, start transfer request when fifo is at 1/2 full
-    //set the magic force end bit(12) to cause fetch from start
-    //    -this only happens when the bit is set from 0->1 (edge)
-    mmio_.Write32((1 << 12) | ((fifo_depth_ -1) << 24) | (((fifo_depth_ / 2) - 1) << 16),
-        GetFrddrOffset(FRDDR_CTRL1_OFFS));
-
-    //Value to be inserted in a slot if it is muted
-    mmio_.Write32(0x00000000, GetTdmOffset(TDMOUT_MUTE_VAL_OFFS));
-    //Value to be inserted in a slot if it is masked
-    mmio_.Write32(0x00000000, GetTdmOffset(TDMOUT_MASK_VAL_OFFS));
-#endif
+    //This sets the number of sysclk cycles between edge of dclk and when
+    // data is sampled.  AmLogic material suggests this should be 3/4 of a
+    // dclk half-cycle.
+    uint32_t samp_delay = 3 * (dclk_div_ + 1) / ( 4 * 2 * (sysclk_div_ + 1));
+    zxlogf(INFO,"Sample delay = %u sclk cycles\n",samp_delay);
+    pdm_mmio_.Write32((samp_delay << 0) | (samp_delay << 4), PDM_CHAN_CTRL);
 }
 
-/* Notes
-    -div is desired divider minus 1. (want /100? write 99)
+/*
+    Relies heavily on magic values from Amlogic.  @hollande following up to get
+    more information on operation as datasheet seems inconsistent with configuration.
 */
-zx_status_t AmlPdmDevice::SetMclkDiv(uint32_t div) {
+void AmlPdmDevice::ConfigFilters() {
 
-    return ZX_OK;
+    pdm_mmio_.Write32((1 << 31) |    //Enable
+                      (0x11 << 24) | //Final gain shift parameter)
+                      (0x80 << 16) | //Final gain multiplier
+                      (0x08 << 4 ) | //hcic downsample rate=8
+                      (0x07 << 0 ),  //hcic stage number (must be between 3-9)
+                      PDM_HCIC_CTRL1);
+    pdm_mmio_.Write32((0x01 << 31) | //Enable filter
+                      (0x01 << 16) | //Round mode (this doesn't jibe w/ datasheet)
+                      (0x02 << 12) | //Filter 1 downsample rate
+                      static_cast<uint32_t>(countof(lpf1m1) << 0), //Number of taps in filter
+                      PDM_F1_CTRL);
+    pdm_mmio_.Write32((0x01 << 31) | //Enable filter
+                      (0x00 << 16) | //Round mode (this doesn't jibe w/ datasheet)
+                      (0x02 << 12) | //Filter 2 downsample rate
+                      static_cast<uint32_t>(countof(lpf2osr64) << 0), //Number of taps in filter
+                      PDM_F2_CTRL);
+    pdm_mmio_.Write32((0x01 << 31) | //Enable filter
+                      (0x01 << 16) | //Round mode (this doesn't jibe w/ datasheet)
+                      (0x02 << 12) | //Filter 3 downsample rate
+                      static_cast<uint32_t>(countof(lpf3m1) << 0), //Number of taps in filter
+                      PDM_F3_CTRL);
+
+    pdm_mmio_.Write32((0x01 << 31) | //Enable filter
+                      (0x07 << 16) | //Shift steps
+                      (0x8000 << 0), //Output factor
+                      PDM_HPF_CTRL);
+
+    //set coefficient index pointer to 0
+    pdm_mmio_.Write32(0x0000, PDM_COEFF_ADDR);
+
+    //Write coefficients to coefficient memory
+    //  --these appear to be packed with the filter length in each filter
+    //    control register being the mechanism that helps reference them
+    for(uint32_t i = 0; i < countof(lpf1m1); i++){
+        pdm_mmio_.Write32(lpf1m1[i], PDM_COEFF_DATA);
+    }
+    for(uint32_t i = 0; i < countof(lpf2osr64); i++){
+        pdm_mmio_.Write32(lpf2osr64[i], PDM_COEFF_DATA);
+    }
+    for(uint32_t i = 0; i < countof(lpf3m1); i++){
+        pdm_mmio_.Write32(lpf3m1[i], PDM_COEFF_DATA);
+    }
+
+    //set coefficient index pointer back to 0
+    pdm_mmio_.Write32(0x0000, PDM_COEFF_ADDR);
 }
+
 
 uint32_t AmlPdmDevice::GetRingPosition() {
-
-//    return mmio_.Read32(GetFrddrOffset(FRDDR_STATUS2_OFFS)) -
-//           mmio_.Read32(GetFrddrOffset(FRDDR_START_ADDR_OFFS));
-    return 0;
+    return audio_mmio_.Read32(GetToddrOffset(TODDR_STATUS2_OFFS)) -
+           audio_mmio_.Read32(GetToddrOffset(TODDR_START_ADDR_OFFS));
 }
 
 void AmlPdmDevice::AudioClkEna(uint32_t audio_blk_mask) {
@@ -134,40 +214,37 @@ zx_status_t AmlPdmDevice::SetBuffer(zx_paddr_t buf, size_t len) {
 
     //Write32 the start and end pointers.  Each fetch is 64-bits, so end poitner
     //    is pointer to the last 64-bit fetch (inclusive)
-    //mmio_.Write32(static_cast<uint32_t>(buf), GetFrddrOffset(FRDDR_START_ADDR_OFFS));
-    //mmio_.Write32(static_cast<uint32_t>(buf + len - 8),
-    //            GetFrddrOffset(FRDDR_FINISH_ADDR_OFFS));
+    audio_mmio_.Write32(static_cast<uint32_t>(buf), GetToddrOffset(TODDR_START_ADDR_OFFS));
+    audio_mmio_.Write32(static_cast<uint32_t>(buf + len - 8),
+                GetToddrOffset(TODDR_FINISH_ADDR_OFFS));
     return ZX_OK;
 }
 
-
-// Stops the tdm from clocking data out of fifo onto bus
+// Stops the pdm from clocking
 void AmlPdmDevice::PdmInDisable() {
-    //mmio_.ClearBits32(1 << 31, GetTdmOffset(TDMOUT_CTRL0_OFFS));
+    pdm_mmio_.ClearBits32(1 << 31, PDM_CTRL);
 }
-// Enables the tdm to clock data out of fifo onto bus
+// Enables the pdm to clock data
 void AmlPdmDevice::PdmInEnable() {
-    //mmio_.SetBits32(1 << 31, GetTdmOffset(TDMOUT_CTRL0_OFFS));
+    pdm_mmio_.SetBits32(1 << 31, PDM_CTRL);
 }
 
 void AmlPdmDevice::TODDREnable() {
     //Set the load bit, will make sure things start from beginning of buffer
-    //mmio_.SetBits32(1 << 12, GetFrddrOffset(FRDDR_CTRL1_OFFS));
-    //mmio_.SetBits32(1 << 31, GetFrddrOffset(FRDDR_CTRL0_OFFS));
+    audio_mmio_.SetBits32(1 << 25, GetToddrOffset(TODDR_CTRL1_OFFS));
+    audio_mmio_.SetBits32(1 << 31, GetToddrOffset(TODDR_CTRL0_OFFS));
 }
 
 void AmlPdmDevice::TODDRDisable() {
     // Clear the load bit (this is the bit that forces the initial fetch of
     //    start address into current ptr)
-    //mmio_.ClearBits32(1 << 12, GetFrddrOffset(FRDDR_CTRL1_OFFS));
-    // Disable the frddr channel
-    //mmio_.ClearBits32(1 << 31, GetFrddrOffset(FRDDR_CTRL0_OFFS));
+    audio_mmio_.ClearBits32(1 << 31, GetToddrOffset(TODDR_CTRL0_OFFS));
+    audio_mmio_.ClearBits32(1 << 25, GetToddrOffset(TODDR_CTRL1_OFFS));
 }
 
 void AmlPdmDevice::Sync() {
-    //mmio_.ClearBits32(3 << 28, GetTdmOffset(TDMOUT_CTRL0_OFFS));
-    //mmio_.SetBits32(1 << 29, GetTdmOffset(TDMOUT_CTRL0_OFFS));
-    //mmio_.SetBits32(1 << 28, GetTdmOffset(TDMOUT_CTRL0_OFFS));
+    pdm_mmio_.ClearBits32(1 << 16, PDM_CTRL);
+    pdm_mmio_.SetBits32(1 << 16, PDM_CTRL);
 }
 
 // Resets frddr mechanisms to start at beginning of buffer

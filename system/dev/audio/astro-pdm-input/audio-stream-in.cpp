@@ -32,20 +32,18 @@ zx_status_t AstroAudioStreamIn::Init() {
     if (status != ZX_OK) {
         return status;
     }
-#if 0
     // Set our gain capabilities.
-    cur_gain_state_.cur_gain = codec_->GetGain();
+    cur_gain_state_.cur_gain = 0;
     cur_gain_state_.cur_mute = false;
     cur_gain_state_.cur_agc = false;
-
-    cur_gain_state_.min_gain = codec_->GetMinGain();
-    cur_gain_state_.max_gain = codec_->GetMaxGain();
-    cur_gain_state_.gain_step = codec_->GetGainStep();
+    cur_gain_state_.min_gain = 0;
+    cur_gain_state_.max_gain = 0;
+    cur_gain_state_.gain_step = 0;
     cur_gain_state_.can_mute = false;
     cur_gain_state_.can_agc = false;
-#endif
+
     snprintf(device_name_, sizeof(device_name_), "astro-audio-in");
-    snprintf(mfr_name_, sizeof(mfr_name_), "Spacely Sprockets");
+    snprintf(mfr_name_, sizeof(mfr_name_), "Bike Sheds, Inc.");
     snprintf(prod_name_, sizeof(prod_name_), "astro");
 
     unique_id_ = AUDIO_STREAM_UNIQUE_ID_BUILTIN_MICROPHONE;
@@ -78,7 +76,7 @@ zx_status_t AstroAudioStreamIn::InitPdev() {
 
     pdm_ = AmlPdmDevice::Create(fbl::move(pdev_->GetMmio(0)),
                                 fbl::move(pdev_->GetMmio(1)),
-                                      HIFI_PLL, HIFI_PLL, TODDR_B);
+                                HIFI_PLL, 7, 499, TODDR_B);
     if (pdm_ == nullptr) {
         zxlogf(ERROR, "%s failed to create pdm device\n", __func__);
         return ZX_ERR_NO_MEMORY;
@@ -119,7 +117,6 @@ zx_status_t AstroAudioStreamIn::ChangeFormat(const audio_proto::StreamSetFmtReq&
 zx_status_t AstroAudioStreamIn::GetBuffer(const audio_proto::RingBufGetBufferReq& req,
                                            uint32_t* out_num_rb_frames,
                                            zx::vmo* out_buffer) {
-#if 0
     uint32_t rb_frames =
         static_cast<uint32_t>(pinned_ring_buffer_.region(0).size) / frame_size_;
 
@@ -135,15 +132,13 @@ zx_status_t AstroAudioStreamIn::GetBuffer(const audio_proto::RingBufGetBufferReq
 
     *out_num_rb_frames = rb_frames;
 
-    aml_audio_->SetBuffer(pinned_ring_buffer_.region(0).phys_addr,
+    pdm_->SetBuffer(pinned_ring_buffer_.region(0).phys_addr,
                           rb_frames * frame_size_);
-#endif
     return ZX_OK;
 }
 
 
 zx_status_t AstroAudioStreamIn::Start(uint64_t* out_start_time) {
-#if 0
     *out_start_time = pdm_->Start();
 
     uint32_t notifs = LoadNotificationsPerRing();
@@ -154,7 +149,6 @@ zx_status_t AstroAudioStreamIn::Start(uint64_t* out_start_time) {
     } else {
         us_per_notification_ = 0;
     }
-#endif
     return ZX_OK;
 }
 
@@ -187,11 +181,6 @@ zx_status_t AstroAudioStreamIn::AddFormats() {
 
     return ZX_OK;
 }
-
-
-
-
-
 
 } //namespace astro
 } //namespace audio

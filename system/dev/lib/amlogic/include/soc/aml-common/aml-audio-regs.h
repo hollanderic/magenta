@@ -10,10 +10,16 @@ __BEGIN_CDECLS
 
 //PDM control registers
 #define PDM_CTRL                    (0x00 << 2)
-
+#define PDM_HCIC_CTRL1              (0x01 << 2)
+#define PDM_HCIC_CTRL2              (0x02 << 2)
+#define PDM_F1_CTRL                 (0x03 << 2)
+#define PDM_F2_CTRL                 (0x04 << 2)
+#define PDM_F3_CTRL                 (0x05 << 2)
+#define PDM_HPF_CTRL                (0x06 << 2)
 #define PDM_CHAN_CTRL               (0x07 << 2)
 #define PDM_CHAN_CTRL1              (0x08 << 2)
-
+#define PDM_COEFF_ADDR              (0x09 << 2)
+#define PDM_COEFF_DATA              (0x0a << 2)
 #define PDM_CLKG_CTRL               (0x0b << 2)
 
 
@@ -47,6 +53,15 @@ __BEGIN_CDECLS
 
 #define EE_AUDIO_CLK_PDMIN_CTRL0      0x00ac
 #define EE_AUDIO_CLK_PDMIN_CTRL1      0x00b0
+
+//TODDR control reg blocks and offsets
+#define TODDR_CTRL0_OFFS        (0x00)
+#define TODDR_CTRL1_OFFS        (0x04)
+#define TODDR_START_ADDR_OFFS   (0x08)
+#define TODDR_FINISH_ADDR_OFFS  (0x0c)
+#define TODDR_INT_ADDR_OFFS     (0x10)
+#define TODDR_STATUS1_OFFS      (0x14)
+#define TODDR_STATUS2_OFFS      (0x18)
 
 //FRDDR control reg blocks and offsets
 #define FRDDR_CTRL0_OFFS        (0x00)
